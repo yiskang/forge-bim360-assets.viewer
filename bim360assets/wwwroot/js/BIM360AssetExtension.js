@@ -181,6 +181,15 @@
             });
         }
 
+        async buildLocationsFromApi() {
+            try {
+                this.locations = await this.getLocations();
+                this.locationBreadcrumbs = await this.getLocationBreadcrumbs();
+            } catch (ex) {
+                console.warn(`[BIM360DataProvider]: ${ex}`);
+            }
+        }
+
         buildLocationsFromRoomProps(roomData) {
             return new Promise(async (resolve, reject) => {
                 if (!roomData)
@@ -571,7 +580,7 @@
             const status = this.statuses[asset.statusId];
             const category = this.categories[asset.categoryId];
             let location = null;
-            if (this.locationBreadcrumbs.hasOwnProperty(asset.locationId)) {
+            if (asset.locationId && this.locationBreadcrumbs.hasOwnProperty(asset.locationId)) {
                 location = this.locationBreadcrumbs[asset.locationId];
             } else {
                 const assetInfoFromCache = Object.values(this.assetInfoCache).find(c => c.assetId === asset.clientAssetId);
@@ -2016,10 +2025,15 @@
             try {
                 // Pre-load room model
                 await spaceFilterPanel.loadRoomModels();
-                await this.dataProvider.buildLocationsFromRoomProps({
-                    dbIds: spaceFilterPanel.roomDbIds,
-                    model: spaceFilterPanel.roomModel
-                });
+
+                if (this.options.enableLocationsAPI === true) {
+                    await this.dataProvider.buildLocationsFromApi();
+                } else {
+                    await this.dataProvider.buildLocationsFromRoomProps({
+                        dbIds: spaceFilterPanel.roomDbIds,
+                        model: spaceFilterPanel.roomModel
+                    });
+                }
 
                 // Cache asset props from load master model
                 await this.dataProvider.buildAssetInfoCache(viewer.model);

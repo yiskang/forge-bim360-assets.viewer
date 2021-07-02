@@ -35,7 +35,8 @@ function launchViewer(urn, viewableId) {
 
   Autodesk.Viewing.Initializer(options, () => {
     const config3d = {
-      extensions: ['BIM360AssetExtension']
+      extensions: ['BIM360AssetExtension'],
+      //enableLocationsAPI: true !<<< Uncomment to use BIM360 Locations API
     };
     viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('forgeViewer'), config3d);
     viewer.start();
