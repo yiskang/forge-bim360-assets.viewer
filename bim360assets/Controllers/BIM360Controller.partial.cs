@@ -38,107 +38,106 @@ namespace bim360assets.Controllers
 {
     public partial class BIM360Controller : ControllerBase
     {
-        private async Task<IRestResponse> GetIssuesAsync(string containerId, string resource, string urn)
+        private static string[] supportedSensorNames = new string[] { "Temperature" };
+        private static string[] supportedSensorCustomAttributes = new string[]
         {
-            Credentials credentials = await Credentials.FromSessionAsync(base.Request.Cookies, Response.Cookies);
-            urn = Encoding.UTF8.GetString(Convert.FromBase64String(urn));
+            "External Id",
+            "Sensor.[0].Id", "Sensor.[0].Name", "Sensor.[0].DataType",
+            "Sensor.[0].DateUnit", "Sensor.[0].RangeMin", "Sensor.[0].RangeMax"
+        };
 
-            RestClient client = new RestClient(BASE_URL);
-            RestRequest request = new RestRequest("/issues/v1/containers/{container_id}/{resource}?filter[target_urn]={urn}", RestSharp.Method.GET);
-            request.AddParameter("container_id", containerId, ParameterType.UrlSegment);
-            request.AddParameter("urn", urn, ParameterType.UrlSegment);
-            request.AddParameter("resource", resource, ParameterType.UrlSegment);
-            request.AddHeader("Authorization", "Bearer " + credentials.TokenInternal);
-            return await client.ExecuteTaskAsync(request);
+        private string sensorNameCustomAttr
+        {
+            get
+            {
+                return supportedSensorCustomAttributes[2];
+            }
         }
 
         [HttpGet]
-        [Route("api/forge/bim360/account/{accountId}/container/{containerId}/issues/{urn}")]
-        public async Task<JArray> GetDocumentIssuesAsync(string accountId, string containerId, string urn)
+        [Route("api/forge/bim360/account/{accountId}/project/{projectId}/sensors-attrs")]
+        public async Task<IActionResult> GetSensorAttributes(string accountId, string projectId)
         {
-            IRestResponse documentIssuesResponse = await GetIssuesAsync(containerId, "quality-issues", urn);
-            IRestResponse usersResponse = await GetUsers(accountId);
+            var attrDefsResponse = await GetCustomAttributeDefsAsync(projectId.Replace("b.", string.Empty), null);
+            var attrDefs = JsonConvert.DeserializeObject<PaginatedAssetCustomAttributes>(attrDefsResponse.Content);
 
-            dynamic issues = JObject.Parse(documentIssuesResponse.Content);
-            dynamic users = JArray.Parse(usersResponse.Content);
-            foreach (dynamic issue in issues.data)
+            var results = attrDefs.Results.Where(attr => supportedSensorCustomAttributes.Contains(attr.DisplayName));
+
+            return Ok(results);
+        }
+
+        [HttpGet]
+        [Route("api/forge/bim360/account/{accountId}/project/{projectId}/sensors")]
+        public async Task<IActionResult> GetSensors(string accountId, string projectId)
+        {
+            var assets = await this.GetAssetsBySensorNamesAsync(projectId);
+
+            return Ok(assets.Select(a => a.CustomAttributes));
+        }
+
+        private async Task<List<Asset>> GetAssetsBySensorNamesAsync(string projectId)
+        {
+            var sensorNameAttr = await this.GetCustomAttributeByNameAsync(projectId, this.sensorNameCustomAttr);
+            var paginatedAssets = supportedSensorNames
+                .Select(name => this.GetAssetsByCustomAttributeAsync(projectId, sensorNameAttr.Name, name, null))
+                .ToList();
+
+            var results = await Task.WhenAll(paginatedAssets);
+
+            return results
+                    .SelectMany(a => a.Results)
+                    .ToList();
+        }
+
+        private async Task<AssetCustomAttribute> GetCustomAttributeByNameAsync(string projectId, string name)
+        {
+            var attrDefsResponse = await GetCustomAttributeDefsAsync(projectId.Replace("b.", string.Empty), null, 100);
+            var attrDefs = JsonConvert.DeserializeObject<PaginatedAssetCustomAttributes>(attrDefsResponse.Content);
+            var attr = attrDefs.Results.First(attr => attr.DisplayName.Contains(name));
+
+            if (attr == null)
             {
-                issue.attributes.assigned_to_name = "Not yet assigned"; // default value?
-                foreach (dynamic user in users)
-                {
-                    if (user.uid == issue.attributes.assigned_to)
-                    {
-                        issue.attributes.assigned_to_name = user.name;
-                    }
-                }
+                throw new InvalidOperationException($"Failed to get CustomAttribute called `{name}`");
             }
 
-            return issues.data;
+            return attr;
         }
 
-        private async Task<IRestResponse> PostIssuesAsync(string containerId, string resource, JObject data)
+        private async Task<PaginatedAssets> GetAssetsByCustomAttributeAsync(string projectId, string name, string value, string cursorState, Nullable<int> pageLimit = null)
         {
             Credentials credentials = await Credentials.FromSessionAsync(base.Request.Cookies, Response.Cookies);
-
-            RestClient client = new RestClient(BASE_URL);
-            RestRequest request = new RestRequest("/issues/v1/containers/{container_id}/{resource}", RestSharp.Method.POST);
-            request.AddParameter("container_id", containerId, ParameterType.UrlSegment);
-            request.AddParameter("resource", resource, ParameterType.UrlSegment);
-            request.AddHeader("Authorization", "Bearer " + credentials.TokenInternal);
-            request.AddHeader("Content-Type", "application/vnd.api+json");
-            request.AddParameter("text/json", Newtonsoft.Json.JsonConvert.SerializeObject(data), ParameterType.RequestBody);
-
-            return await client.ExecuteTaskAsync(request);
-        }
-
-        private async Task<IRestResponse> GetIssueTypesAsync(string containerId)
-        {
-            Credentials credentials = await Credentials.FromSessionAsync(base.Request.Cookies, Response.Cookies);
-
-            RestClient client = new RestClient(BASE_URL);
-            RestRequest request = new RestRequest("/issues/v1/containers/{container_id}/ng-issue-types?include=subtypes", RestSharp.Method.GET);
-            request.AddParameter("container_id", containerId, ParameterType.UrlSegment);
-            request.AddHeader("Authorization", "Bearer " + credentials.TokenInternal);
-            request.AddHeader("Content-Type", "application/vnd.api+json");
-
-            return await client.ExecuteTaskAsync(request);
-        }
-
-
-        [HttpPost]
-        [Route("api/forge/bim360/container/{containerId}/issues/{urn}")]
-        public async Task<IActionResult> CreateDocumentIssuesAsync(string containerId, string urn, [FromBody] JObject data)
-        {
-            // for this sample, let's create Design issues
-            // so we need the ngType and ngSubtype
-            IRestResponse issueTypesResponse = await GetIssueTypesAsync(containerId);
-            dynamic issueTypes = JObject.Parse(issueTypesResponse.Content);
-            string ngTypeId = string.Empty;
-            string ngSubtypeId = string.Empty;
-            foreach (dynamic ngType in issueTypes.results)
+            if (credentials == null)
             {
-                if (ngType.title == "Design") // ngType we're looking for
-                {
-                    foreach (dynamic subType in ngType.subtypes)
-                    {
-                        if (subType.title == "Design") // ngSubtype we're looking for
-                        {
-                            ngSubtypeId = subType.id; break; // stop looping subtype...
-                        }
-                    }
-                    ngTypeId = ngType.id; break; // stop looping type...
-                }
+                throw new InvalidOperationException("Failed to refresh access token");
             }
-            // double check we got it
-            if (string.IsNullOrWhiteSpace(ngTypeId) || string.IsNullOrWhiteSpace(ngSubtypeId)) return BadRequest();
-            // and replace on the payload
-            data["data"]["attributes"]["ng_issue_type_id"] = ngTypeId;
-            data["data"]["attributes"]["ng_issue_subtype_id"] = ngSubtypeId;
 
-            // now post to Quality-Issues
-            IRestResponse documentIssuesResponse = await PostIssuesAsync(containerId, "quality-issues", data);
+            var attrFilter = $"filter[customAttributes][{name}]";
 
-            return (documentIssuesResponse.StatusCode == HttpStatusCode.Created ? (IActionResult)Ok() : (IActionResult)BadRequest(documentIssuesResponse.Content));
+            RestClient client = new RestClient(BASE_URL);
+            RestRequest request = new RestRequest("/bim360/assets/v2/projects/{project_id}/assets", RestSharp.Method.GET);
+            request.AddParameter("project_id", projectId.Replace("b.", string.Empty), ParameterType.UrlSegment);
+            request.AddParameter("includeCustomAttributes", true, ParameterType.QueryString);
+            request.AddParameter(attrFilter, value, ParameterType.QueryString);
+            request.AddHeader("Authorization", "Bearer " + credentials.TokenInternal);
+
+            IRestResponse assetsResponse = await client.ExecuteTaskAsync(request);
+            var assets = JsonConvert.DeserializeObject<PaginatedAssets>(assetsResponse.Content);
+
+            if (assets.Results == null || assets.Results.Count <= 0)
+                return null;
+
+            if (assets.Pagination.CursorState == null)
+                return assets;
+
+            var nextCursorState = new
+            {
+                offset = assets.Pagination.Offset + assets.Pagination.Limit,
+                limit = assets.Pagination.Limit
+            };
+            var nextCursorStateStr = JsonConvert.SerializeObject(nextCursorState);
+            var encodedNextCursorStateStr = Convert.ToBase64String(Encoding.UTF8.GetBytes(nextCursorStateStr));
+
+            return await GetAssetsByCustomAttributeAsync(projectId, name, value, encodedNextCursorStateStr, assets.Pagination.Limit);
         }
     }
 }

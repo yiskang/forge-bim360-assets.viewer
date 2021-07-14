@@ -813,6 +813,115 @@
                 );
             });
         }
+
+        async getSensorsFromAssetData() {
+            return new Promise(async (resolve, reject) => {
+                const selected = getSelectedNode();
+                try {
+                    const data = await this.getHqProjectId(selected.project);
+                    const result = await this.getRemoteSensorsFromAssetData(data.hubId, data.projectId);
+                    const sensorAttrDefs = await this.getSensorAttributeDefs();
+                    const sensorAttrNames = Object.keys(sensorAttrDefs);
+
+                    const sensors = [];
+
+                    for (let i = 0; i < result.length; i++) {
+                        const sensor = result[i];
+
+                        // filter out supported attributes and values only
+                        const sensorInfo = Object.keys(sensor)
+                            .filter(attrName => sensorAttrNames.includes(attrName))
+                            .map(attrName => {
+                                let attr = sensorAttrDefs[attrName];
+                                let val = sensor[attrName];
+                                let obj = {};
+                                const results = attr.displayName.split('.');
+                                const str = results[results.length - 1];
+                                let name = str.charAt(0).toLowerCase() + str.slice(1);
+                                name = name.split(' ').join('');
+                                obj[name] = val;
+                                return obj;
+                            })
+                            .reduce((a, b) => Object.assign(a, b), {});
+
+                        sensors.push(sensorInfo);
+                    }
+                    console.log(sensors);
+                    resolve(sensors);
+                } catch (ex) {
+                    reject(new Error(ex));
+                }
+            });
+        }
+
+        async getRemoteSensorsFromAssetData(accountId, projectId) {
+            return new Promise((resolve, reject) => {
+                fetch(`/api/forge/bim360/account/${accountId}/project/${projectId}/sensors`, {
+                    method: 'get',
+                    headers: new Headers({ 'Content-Type': 'application/json' })
+                })
+                    .then((response) => {
+                        if (response.status === 200) {
+                            return response.json();
+                        } else {
+                            return reject(
+                                new Error(`Failed to fetch sensor data of BIM360 Asset server (status: ${response.status}, message: ${response.statusText})`)
+                            );
+                        }
+                    })
+                    .then((data) => {
+                        if (!data) return reject(new Error('Empty response'));
+
+                        resolve(data);
+                    })
+                    .catch((error) => reject(error));
+            });
+        }
+
+        async getSensorAttributeDefs() {
+            return new Promise(async (resolve, reject) => {
+                const selected = getSelectedNode();
+                try {
+                    const data = await this.getHqProjectId(selected.project);
+                    const customAttrDefs = await this.getRemoteSensorAttributeDefs(data.hubId, data.projectId);
+                    const customAttrDefMap = {};
+
+                    for (let i = 0; i < customAttrDefs.length; i++) {
+                        const attrDef = customAttrDefs[i];
+                        customAttrDefMap[attrDef.name] = attrDef;
+                    }
+
+                    console.log(customAttrDefMap);
+                    resolve(customAttrDefMap);
+                } catch (ex) {
+                    reject(new Error(ex));
+                }
+            });
+        }
+
+        async getRemoteSensorAttributeDefs(accountId, projectId) {
+            return new Promise((resolve, reject) => {
+                fetch(`/api/forge/bim360/account/${accountId}/project/${projectId}/sensors-attrs`, {
+                    method: 'get',
+                    headers: new Headers({ 'Content-Type': 'application/json' })
+                })
+                    .then((response) => {
+                        if (response.status === 200) {
+                            return response.json();
+                        } else {
+                            return reject(
+                                new Error(`Failed to fetch Sensor Custom Attribute Definitions from BIM360 Asset server (status: ${response.status}, message: ${response.statusText})`)
+                            );
+                        }
+                    })
+                    .then((data) => {
+                        if (!data) return reject(new Error('Empty response'));
+
+                        resolve(data);
+                    })
+                    .catch((error) => reject(error));
+            });
+        }
     }
 
     class BIM360AssetListPanel extends Autodesk.Viewing.UI.DockingPanel {
