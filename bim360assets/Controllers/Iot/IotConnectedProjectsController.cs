@@ -21,17 +21,17 @@ using System.Threading.Tasks;
 using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using bim360assets.Models.Iot;
-using Microsoft.EntityFrameworkCore;
+using bim360assets.Models.Repositories;
 
-namespace bim360assets.Controllers
+namespace bim360assets.Controllers.Iot
 {
-    public partial class BIM360IotConnectedController : ControllerBase
+    public partial class IotConnectedProjectsController : ControllerBase
     {
-        private readonly DataBaseContext dbContext;
+        private readonly IProjectRepository repository;
 
-        public BIM360IotConnectedController(DataBaseContext context)
+        public IotConnectedProjectsController(IProjectRepository repository)
         {
-            this.dbContext = context;
+            this.repository = repository;
         }
 
         [HttpGet]
@@ -40,9 +40,7 @@ namespace bim360assets.Controllers
         {
             try
             {
-                var projects = await this.dbContext.Projects
-                                    .AsNoTracking()
-                                    .ToListAsync();
+                var projects = await this.repository.GetAll();
 
                 return Ok(projects);
             }
@@ -63,9 +61,9 @@ namespace bim360assets.Controllers
                     if (project.Id != 0)
                         project.Id = 0;
 
-                    this.dbContext.Projects.Add(project);
+                    this.repository.Add(project);
 
-                    await this.dbContext.SaveChangesAsync();
+                    await this.repository.SaveChangesAsync();
                 }
 
                 return Ok(project);
@@ -78,24 +76,23 @@ namespace bim360assets.Controllers
 
         [HttpPatch]
         [Route("api/iot/projects/{projectId}")]
-        public async Task<IActionResult> EditProjectById([FromRoute] string projectId, [FromBody] Project project)
+        public async Task<IActionResult> EditProjectById([FromRoute] string projectId, [FromBody] Project data)
         {
             try
             {
                 if (ModelState.IsValid)
                 {
-                    var projectInDb = await this.dbContext.Projects
-                                            .Where(p => p.ExternalId == projectId)
-                                            .AsNoTracking()
-                                            .SingleOrDefaultAsync();
+                    var results = await this.repository.GetAll(p => p.ExternalId == projectId);
+                    var project = results.SingleOrDefault();
 
-                if (projectInDb == null)
-                    return NotFound();
+                    if (project == null)
+                        return NotFound();
 
-                    projectInDb.Name = project.Name;
-                    projectInDb.ExternalId = project.ExternalId;
+                    project.Name = data.Name;
+                    project.ExternalId = data.ExternalId;
 
-                    await this.dbContext.SaveChangesAsync();
+                    this.repository.Update(project);
+                    await this.repository.SaveChangesAsync();
 
                     return Ok(project);
                 }
@@ -114,10 +111,8 @@ namespace bim360assets.Controllers
         {
             try
             {
-                var project = await this.dbContext.Projects
-                                    .Where(p => p.ExternalId == projectId)
-                                    .AsNoTracking()
-                                    .SingleOrDefaultAsync();
+                var results = await this.repository.GetAll(p => p.ExternalId == projectId);
+                var project = results.SingleOrDefault();
 
                 if (project == null)
                     return NotFound();
@@ -136,16 +131,15 @@ namespace bim360assets.Controllers
         {
             try
             {
-                var project = await this.dbContext.Projects
-                                    .Where(p => p.ExternalId == projectId)
-                                    .SingleOrDefaultAsync();
+                var results = await this.repository.GetAll(p => p.ExternalId == projectId);
+                var project = results.SingleOrDefault();
 
                 if (project == null)
                     return NotFound();
 
-                this.dbContext.Remove(project);
+                this.repository.Delete(project.Id);
 
-                await this.dbContext.SaveChangesAsync();
+                await this.repository.SaveChangesAsync();
 
                 return Ok(project);
             }

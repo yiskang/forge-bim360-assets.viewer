@@ -16,38 +16,13 @@
 // UNINTERRUPTED OR ERROR FREE.
 /////////////////////////////////////////////////////////////////////
 
-using System;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
-using Newtonsoft.Json;
-
-namespace bim360assets.Models.Iot
+namespace bim360assets.Models
 {
-    public class Record : IEntity<int>
+    /// <summary>
+    /// ref: https://github.com/JacekKosciesza/StarWars/blob/master/StarWars.Core/Data
+    /// </summary>
+     public interface IEntity<TKey>
     {
-        /// <summary>
-        /// Record Id (Primary key).
-        /// </summary>
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int Id { get; set; }
-
-        /// <summary>
-        /// Sensor Value.
-        /// </summary>
-        public double Value { get; set; }
-
-        /// <summary>
-        /// Data create time.
-        /// </summary>
-        public DateTime CreatedAt { get; set; }
-
-        /// <summary>
-        /// Id of the sensor where this sensor belongs to.
-        /// </summary>
-        public int SensorId { get; set; }
-
-        [JsonIgnore]
-        public virtual Sensor Sensor { get; set; }
+        TKey Id { get; set; }
     }
 }

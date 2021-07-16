@@ -22,22 +22,30 @@ using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using bim360assets.Models.Iot;
 using Microsoft.EntityFrameworkCore;
+using bim360assets.Models.Repositories;
 
 namespace bim360assets.Controllers
 {
-    public partial class BIM360IotConnectedController : ControllerBase
+    public class IotConnectedSensorsController : ControllerBase
     {
+        private readonly IProjectRepository projectRepository;
+        private readonly ISensorRepository sensorRepository;
+        private readonly IRecordRepository recordRepository;
+
+        public IotConnectedSensorsController(IProjectRepository projectRepository, ISensorRepository sensorRepository, IRecordRepository recordRepository)
+        {
+            this.projectRepository = projectRepository;
+            this.sensorRepository = sensorRepository;
+            this.recordRepository = recordRepository;
+        }
+
         [HttpGet]
         [Route("api/iot/projects/{projectId}/sensors")]
         public async Task<IActionResult> GetSensors(string projectId)
         {
             try
             {
-                var sensors = await this.dbContext.Sensors
-                                    .Include(s => s.Project)
-                                    .Where(s => s.Project.ExternalId == projectId)
-                                    .AsNoTracking()
-                                    .ToListAsync();
+                var sensors = await this.sensorRepository.GetAll("Project", s => s.Project.ExternalId == projectId);
 
                 return Ok(sensors);
             }
@@ -55,21 +63,19 @@ namespace bim360assets.Controllers
             {
                 if (ModelState.IsValid)
                 {
-                    var projectInDb = await this.dbContext.Projects
-                                            .Where(p => p.ExternalId == projectId)
-                                            .SingleOrDefaultAsync();
+                    var project = await this.projectRepository.Get(p => p.ExternalId == projectId);
 
-                    if (projectInDb == null)
-                        return NotFound("Project not found");
+                    if (project == null)
+                        return NotFound($"Project not found with external id = {projectId}");
 
                     if (sensor.Id != 0)
                         sensor.Id = 0;
 
-                    sensor.ProjectId = projectInDb.Id;
+                    sensor.ProjectId = project.Id;
 
-                    this.dbContext.Sensors.Add(sensor);
+                    this.sensorRepository.Add(sensor);
 
-                    await this.dbContext.SaveChangesAsync();
+                    await this.sensorRepository.SaveChangesAsync();
                 }
 
                 return Ok(sensor);
@@ -82,24 +88,23 @@ namespace bim360assets.Controllers
 
         [HttpPatch]
         [Route("api/iot/projects/{projectId}/sensors/{sensorId}")]
-        public async Task<IActionResult> EditSensorById([FromRoute] string projectId, [FromRoute] string sensorId, [FromBody] Sensor sensor)
+        public async Task<IActionResult> EditSensorById([FromRoute] string projectId, [FromRoute] string sensorId, [FromBody] Sensor data)
         {
             try
             {
                 if (ModelState.IsValid)
                 {
-                    var sensorInDb = await this.dbContext.Sensors
-                                            .Include(s => s.Project)
-                                            .Where(s => s.ExternalId == sensorId && s.Project.ExternalId == projectId)
-                                            .SingleOrDefaultAsync();
+                    var sensor = await this.sensorRepository.Get("Project", s => s.ExternalId == sensorId && s.Project.ExternalId == projectId);
 
-                    if (sensorInDb == null)
+                    if (sensor == null)
                         return NotFound();
 
-                    sensorInDb.Name = sensor.Name;
-                    sensorInDb.ExternalId = sensor.ExternalId;
+                    sensor.Name = data.Name;
+                    sensor.ExternalId = data.ExternalId;
 
-                    await this.dbContext.SaveChangesAsync();
+                    this.sensorRepository.Update(sensor);
+
+                    await this.sensorRepository.SaveChangesAsync();
 
                     return Ok(sensor);
                 }
@@ -118,11 +123,7 @@ namespace bim360assets.Controllers
         {
             try
             {
-                var sensor = await this.dbContext.Sensors
-                                    .Include(s => s.Project)
-                                    .Where(s => s.ExternalId == sensorId && s.Project.ExternalId == projectId)
-                                    .AsNoTracking()
-                                    .SingleOrDefaultAsync();
+                var sensor = await this.sensorRepository.Get("Project", s => s.ExternalId == sensorId && s.Project.ExternalId == projectId);
 
                 if (sensor == null)
                     return NotFound();
@@ -141,18 +142,14 @@ namespace bim360assets.Controllers
         {
             try
             {
-                var sensor = await this.dbContext.Sensors
-                                    .Include(s => s.Project)
-                                    .Where(s => s.ExternalId == sensorId && s.Project.ExternalId == projectId)
-                                    .AsNoTracking()
-                                    .SingleOrDefaultAsync();
+                var sensor = await this.sensorRepository.Get("Project", s => s.ExternalId == sensorId && s.Project.ExternalId == projectId);
 
                 if (sensor == null)
                     return NotFound();
 
-                this.dbContext.Remove(sensor);
+                this.sensorRepository.Delete(sensor.Id);
 
-                await this.dbContext.SaveChangesAsync();
+                await this.sensorRepository.SaveChangesAsync();
 
                 return Ok(sensor);
             }
@@ -164,25 +161,21 @@ namespace bim360assets.Controllers
 
         [HttpPost]
         [Route("api/iot/projects/{projectId}/sensors/{sensorId}/records")]
-        public async Task<IActionResult> InsertSensorValueById([FromRoute] string projectId, [FromRoute] string sensorId, [FromBody] Record record)
+        public async Task<IActionResult> InsertSensorValueById([FromRoute] string projectId, [FromRoute] string sensorId, [FromBody] Record data)
         {
             try
             {
                 if (ModelState.IsValid)
                 {
-                   var sensorInDb = await this.dbContext.Sensors
-                                    .Include(s => s.Project)
-                                    .Where(s => s.ExternalId == sensorId && s.Project.ExternalId == projectId)
-                                    .AsNoTracking()
-                                    .SingleOrDefaultAsync();
+                    var sensor = await this.sensorRepository.Get("Project", s => s.ExternalId == sensorId && s.Project.ExternalId == projectId);
 
-                    if (sensorInDb == null)
+                    if (sensor == null)
                         return NotFound();
 
-                    record.SensorId = sensorInDb.Id;
-                    this.dbContext.Records.Add(record);
+                    data.SensorId = sensor.Id;
+                    this.recordRepository.Add(data);
 
-                    await this.dbContext.SaveChangesAsync();
+                    await this.recordRepository.SaveChangesAsync();
 
                     return Ok();
                 }
@@ -205,12 +198,8 @@ namespace bim360assets.Controllers
             {
                 if (ModelState.IsValid)
                 {
-                   var records = await this.dbContext.Records
-                                        .Include(r => r.Sensor)
-                                            .ThenInclude(s => s.Project)
-                                        .Where(r => r.Sensor.ExternalId == sensorId && r.Sensor.Project.ExternalId == projectId)
-                                        .AsNoTracking()
-                                        .ToListAsync();
+                    var includes = new string[] { "Sensor", "Sensor.Project" };
+                    var records = await this.recordRepository.GetAll(includes, r => r.Sensor.ExternalId == sensorId && r.Sensor.Project.ExternalId == projectId);
 
                     return Ok(records);
                 }

@@ -20,11 +20,10 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Newtonsoft.Json;
-using Microsoft.EntityFrameworkCore;
 
 namespace bim360assets.Models.Iot
 {
-    public partial class Project
+    public class Project : IEntity<int>
     {
         /// <summary>
         /// Project Id (Primary key).

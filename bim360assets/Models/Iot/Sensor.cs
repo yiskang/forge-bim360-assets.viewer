@@ -23,7 +23,7 @@ using Newtonsoft.Json;
 
 namespace bim360assets.Models.Iot
 {
-    public partial class Sensor
+    public class Sensor : IEntity<int>
     {
         /// <summary>
         /// Project Id (Primary key).

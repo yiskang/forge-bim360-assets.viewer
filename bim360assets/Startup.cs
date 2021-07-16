@@ -26,8 +26,10 @@ using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using bim360assets.Models.Iot;
 using Microsoft.EntityFrameworkCore;
+using bim360assets.Models.Iot;
+using bim360assets.Models.Repositories;
+using Microsoft.Extensions.Logging;
 
 namespace bim360assets
 {
@@ -43,6 +45,12 @@ namespace bim360assets
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddLogging(builder =>
+            {
+                builder.AddConsole();
+                builder.AddDebug();
+            });
+
             services.AddControllersWithViews().AddNewtonsoftJson(options =>
             {
                 //options.SerializerSettings.Converters.Add(new EmptyStringToNullJsonConverter());
@@ -52,6 +60,10 @@ namespace bim360assets
 
             services.AddDbContext<DataBaseContext>(options =>
                 options.UseSqlite(Configuration.GetConnectionString("DefaultConnection")));
+
+            services.AddTransient<IProjectRepository, ProjectRepository>();
+            services.AddTransient<ISensorRepository, SensorRepository>();
+            services.AddTransient<IRecordRepository, RecordRepository>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
