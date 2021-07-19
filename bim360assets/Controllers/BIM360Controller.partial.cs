@@ -38,7 +38,7 @@ namespace bim360assets.Controllers
 {
     public partial class BIM360Controller : ControllerBase
     {
-        private static string[] supportedSensorNames = new string[] { "Temperature" };
+        private static string[] supportedSensorNames = new string[] { "Temperature", "Humidity" };
         private static string[] supportedSensorCustomAttributes = new string[]
         {
             "External Id",

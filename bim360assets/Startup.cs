@@ -30,6 +30,7 @@ using Microsoft.EntityFrameworkCore;
 using bim360assets.Models.Iot;
 using bim360assets.Models.Repositories;
 using Microsoft.Extensions.Logging;
+using bim360assets.Services;
 
 namespace bim360assets
 {
@@ -64,6 +65,16 @@ namespace bim360assets
             services.AddTransient<IProjectRepository, ProjectRepository>();
             services.AddTransient<ISensorRepository, SensorRepository>();
             services.AddTransient<IRecordRepository, RecordRepository>();
+
+            var options = new OpenWeatherMapOptions
+            {
+                ApiKey = Configuration.GetValue<string>("OpenWeatherMap:ApiKey"),
+                Latitude = Configuration.GetValue<string>("OpenWeatherMap:Latitude"),
+                Longitude = Configuration.GetValue<string>("OpenWeatherMap:Longitude"),
+                Units  = Configuration.GetValue<string>("OpenWeatherMap:Units"),
+            };
+            services.AddSingleton(options);
+            services.AddSingleton<IOpenWeatherMapService, OpenWeatherMapService>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
