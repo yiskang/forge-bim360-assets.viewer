@@ -465,5 +465,25 @@ namespace bim360assets.Controllers
                 return BadRequest();
             }
         }
+
+        [HttpGet]
+        [Route("api/iot/projects/{projectId}/records:time-range")]
+        public IActionResult GetTimeRange([FromRoute] string projectId)
+        {
+            try
+            {
+                var includes = new string[] { "Sensor", "Sensor.Project" };
+
+                return Ok(new
+                {
+                    min = this.recordRepository.GetTimeMin(includes, r => r.Sensor.Project.ExternalId == projectId),
+                    max = this.recordRepository.GetTimeMax(includes, r => r.Sensor.Project.ExternalId == projectId)
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest();
+            }
+        }
     }
 }

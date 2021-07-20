@@ -84,6 +84,7 @@
 
             this.dataProvider = dataProvider;
             this.data = {};
+            this.timeRange = null;
         }
 
         get sensors() {
@@ -95,6 +96,41 @@
                 const data = this.data[sensorId];
                 return data.find(d => d.name.toLowerCase() == sensorType.toLowerCase());
             } else {
+                return null;
+            }
+        }
+
+        async getRemoteTimeRange(projectId) {
+            return new Promise((resolve, reject) => {
+                fetch(`/api/iot/projects/${projectId}/records:time-range`, {
+                    method: 'get',
+                    headers: new Headers({
+                        'Content-Type': 'application/json'
+                    })
+                })
+                    .then((response) => {
+                        if (response.status === 200) {
+                            return response.json();
+                        } else {
+                            return reject(new Error(response.statusText));
+                        }
+                    })
+                    .then((data) => {
+                        if (!data) return reject(new Error('Failed to fetch sensor history time range data from the server'));
+                        return resolve(data);
+                    })
+                    .catch((error) => reject(new Error(error)));
+            });
+        }
+
+        async getTimeRange() {
+            try {
+                if (this.timeRange == null) {
+                    const project = await this.dataProvider.getHqProject();
+                    this.timeRange = await this.getRemoteTimeRange(project.projectId);
+                }
+                return this.timeRange;
+            } catch (ex) {
                 return null;
             }
         }
@@ -153,6 +189,8 @@
                     type: SENSOR_DATA_CHANGED_EVENT,
                     data: this.data
                 });
+
+                return this.data;
             } catch (ex) {
                 return null;
             }
@@ -185,6 +223,7 @@
             this.styleMap = [];
             this.currentHeatmapSensorType = 'temperature';
             this.dataHelper = null;
+            this.currentTime = null;
 
             this.onSelectedFloorChanged = this.onSelectedFloorChanged.bind(this);
             this.onSensorDataUpdated = this.onSensorDataUpdated.bind(this);
@@ -258,7 +297,7 @@
 
             let cachedData = this.dataHelper.getDataFromCache(sensor.id, sensorType);
             if (cachedData) {
-                const value = Utility.getClosestValue(cachedData, 1626255000);
+                const value = Utility.getClosestValue(cachedData, this.currentTime);
                 const range = {
                     min: cachedData.avgMin,
                     max: cachedData.avgMax
@@ -319,7 +358,12 @@
             }
 
             this.dataHelper = new SensorDataHelper(this.dataProvider);
-            await this.dataHelper.fetchData(1626192000, 1626620400);
+
+            const timeRange = await this.dataHelper.getTimeRange();
+            await this.dataHelper.fetchData(timeRange.min, timeRange.max);
+
+            this.currentTime = new Date(~~(timeRange.min + 1 * 60 * 60 * 1000 * 24));
+
             this.dataHelper.addEventListener(
                 SENSOR_DATA_CHANGED_EVENT,
                 this.onSensorDataUpdated

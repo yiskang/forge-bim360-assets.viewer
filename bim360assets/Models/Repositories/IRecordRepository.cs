@@ -16,9 +16,20 @@
 // UNINTERRUPTED OR ERROR FREE.
 ///////////////////////////////////////////////////////////////////// 
 
+using System;
+using System.Linq.Expressions;
+using System.Collections.Generic;
 using bim360assets.Models.Iot;
 
 namespace bim360assets.Models.Repositories
 {
-     public interface IRecordRepository : IBaseRepository<Record, int> { }
+     public interface IRecordRepository : IBaseRepository<Record, int>
+     {
+          int GetTimeMin(string include, Expression<Func<Record, bool>> predicate = null);
+          int GetTimeMax(string include, Expression<Func<Record, bool>> predicate = null);
+          int GetTimeMin(IEnumerable<string> includes, Expression<Func<Record, bool>> predicate = null);
+          int GetTimeMax(IEnumerable<string> includes, Expression<Func<Record, bool>> predicate = null);
+          int GetTimeMin(Expression<Func<Record, bool>> predicate = null);
+          int GetTimeMax(Expression<Func<Record, bool>> predicate = null);
+     }
 }
