@@ -75,13 +75,16 @@ namespace bim360assets.Services
                 var res = await client.ExecuteTaskAsync(request);
                 return JsonConvert.DeserializeObject<JObject>(res.Content);
             }
-            catch (Exception ex) {}
+            catch (Exception ex) { }
 
             return null;
         }
 
         public async Task<List<WeatherData>> GetWeatherDataForPastDays(int days = 5)
         {
+            if (days > 5)
+                throw new InvalidOperationException("Input days cannot be greater than 5 due to OpenWeatherMap Free API limit");
+
             int count = 0;
             var date = DateTime.Now.Date;
 

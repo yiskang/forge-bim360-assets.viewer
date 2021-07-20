@@ -83,9 +83,12 @@ namespace bim360assets.Controllers
                 .ToList();
 
             var results = await Task.WhenAll(paginatedAssets);
+            var query = results.AsQueryable().Where(a => a != null);
 
-            return results
-                    .SelectMany(a => a.Results)
+            if (query == null || query.Count() <= 0)
+                return new List<Asset>();
+
+            return query.SelectMany(a => a.Results)
                     .ToList();
         }
 

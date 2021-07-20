@@ -262,11 +262,16 @@
             });
         }
 
+        async getHqProject() {
+            const selected = getSelectedNode();
+            const data = await this.getHqProjectId(selected.project);
+            return data;
+        }
+
         async getUsers() {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const users = await this.getRemoteUsers(data.hubId, data.projectId);
                     const userMap = {};
                     for (let i = 0; i < users.length; i++) {
@@ -348,9 +353,8 @@
 
         async getAssetCategories() {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const cates = await this.getRemoteAssetCategories(data.hubId, data.projectId);
 
                     const result = [];
@@ -399,9 +403,8 @@
 
         async getAssetStatuses() {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const statuses = await this.getRemoteAssetStatuses(data.hubId, data.projectId);
                     const statusMap = {};
                     for (let i = 0; i < statuses.length; i++) {
@@ -446,9 +449,8 @@
 
         async getLocations() {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const locations = await this.getRemoteLocations(`b.${data.hubId}`, `b.${data.projectId}`);
                     resolve(locations);
                 } catch (ex) {
@@ -509,9 +511,8 @@
 
         async getAssetCustomAttributeDefs() {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const customAttrDefs = await this.getRemoteAssetCustomAttributeDefs(data.hubId, data.projectId);
                     const customAttrDefMap = {};
 
@@ -651,9 +652,8 @@
 
         async getAssetInfo(assetId) {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const asset = await this.getRemoteAssetInfo(data.hubId, data.projectId, assetId);
                     const props = {
                         id: asset.id,
@@ -694,9 +694,8 @@
 
         async getAssets(cursorState, limit) {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const assetData = await this.getRemoteAssets(data.hubId, data.projectId, cursorState, limit);
                     const assets = assetData.results;
                     for (let i = 0; i < assets.length; i++) {
@@ -816,9 +815,8 @@
 
         async getSensorsFromAssetData() {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const result = await this.getRemoteSensorsFromAssetData(data.hubId, data.projectId);
                     const sensorAttrDefs = await this.getSensorAttributeDefs();
                     const sensorAttrNames = Object.keys(sensorAttrDefs);
@@ -880,9 +878,8 @@
 
         async getSensorAttributeDefs() {
             return new Promise(async (resolve, reject) => {
-                const selected = getSelectedNode();
                 try {
-                    const data = await this.getHqProjectId(selected.project);
+                    const data = await this.getHqProject();
                     const customAttrDefs = await this.getRemoteSensorAttributeDefs(data.hubId, data.projectId);
                     const customAttrDefMap = {};
 

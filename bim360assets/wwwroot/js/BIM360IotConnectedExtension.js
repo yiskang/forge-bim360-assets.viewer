@@ -17,6 +17,148 @@
 /////////////////////////////////////////////////////////////////////
 
 (function () {
+    const Utility = {
+        getClosestValue: function (av, entry) {
+            let tsValues = av.tsValues;
+            let values = av.avg;
+
+            let smallSide = null;
+            let largeSide = null;
+            let smallSideIndex;
+            let largeSideIndex;
+
+            for (var i = 0; i < tsValues.length; i++) {
+                if (tsValues[i] <= entry && values[i] != null) {
+                    smallSide = values[i];
+                    smallSideIndex = i;
+                } else if (tsValues[i] > entry && values[i] != null) {
+                    largeSide = values[i];
+                    largeSideIndex = i;
+                    break;
+                }
+            }
+
+            if (smallSide != null && largeSide != null) {
+                let sTime = tsValues[smallSideIndex];
+                let lTime = tsValues[largeSideIndex];
+                let p = (entry - sTime) / (lTime - sTime);
+                return smallSide * (1 - p) + largeSide * p;
+            } else {
+                return smallSide || largeSide || 0;
+            }
+        },
+        getNormalizedValue: function (value, range) {
+            let normalized = (value - range.min) / (range.max - range.min);
+
+            normalized = Utility.clamp(normalized, 0, 1);
+            return normalized;
+        },
+        clamp: function (value, lower, upper) {
+            if (value == undefined) {
+                return lower;
+            }
+
+            if (value > upper) {
+                return upper;
+            } else if (value < lower) {
+                return lower;
+            } else {
+                return value;
+            }
+        },
+        /**
+         * Converts a Date object into equivalent Epoch seconds
+         * @param {Date} time A Date object
+         * @returns {number} Time value expressed in Unix Epoch seconds
+         */
+        getTimeInEpochSeconds: function (time) {
+            const epochSeconds = new Date(time).getTime() / 1000.0;
+            return ~~epochSeconds; // Equivalent to Math.floor()
+        }
+    };
+
+    const SENSOR_DATA_CHANGED_EVENT = 'sensorDataChangedEvent';
+    class SensorDataHelper extends THREE.EventDispatcher {
+        constructor(dataProvider) {
+            super();
+
+            this.dataProvider = dataProvider;
+            this.data = {};
+        }
+
+        get sensors() {
+            return this.dataProvider.sensors;
+        }
+
+        getDataFromCache(sensorId, sensorType) {
+            if (this.data.hasOwnProperty(sensorId)) {
+                const data = this.data[sensorId];
+                return data.find(d => d.name.toLowerCase() == sensorType.toLowerCase());
+            } else {
+                return null;
+            }
+        }
+
+        async getRemoteData(projectId, sensorId, sensorType, startTimestamp, endTimestamp) {
+            return new Promise((resolve, reject) => {
+                let query = `type=${sensorType}&startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`;
+
+                fetch(`/api/iot/projects/${projectId}/sensors/${sensorId}/records:aggregate?${query}`, {
+                    method: 'get',
+                    headers: new Headers({
+                        'Content-Type': 'application/json'
+                    })
+                })
+                    .then((response) => {
+                        if (response.status === 200) {
+                            return response.json();
+                        } else {
+                            return reject(new Error(response.statusText));
+                        }
+                    })
+                    .then((data) => {
+                        if (!data) return reject(new Error('Failed to fetch aggregate sensor history data from the server'));
+
+                        data.tsValues = data.time.map(Utility.getTimeInEpochSeconds);
+
+                        data.avgMin = Math.min(...data.avg);
+                        data.avgMax = Math.max(...data.avg);
+
+                        return resolve(data);
+                    })
+                    .catch((error) => reject(new Error(error)));
+            });
+        }
+
+        async fetchData(startTimestamp, endTimestamp) {
+            try {
+                delete this.data;
+                this.data = {};
+
+                const project = await this.dataProvider.getHqProject();
+                const sensors = this.sensors;
+
+                for (let i = 0; i < sensors.length; i++) {
+                    const sensor = sensors[i];
+                    const sensorType = sensor.name.charAt(0).toUpperCase() + sensor.name.slice(1);
+                    const data = await this.getRemoteData(project.projectId, sensor.id, sensorType, startTimestamp, endTimestamp);
+                    if (this.data[sensor.id]) {
+                        this.data[sensor.id].push(data);
+                    } else {
+                        this.data[sensor.id] = [data];
+                    }
+                }
+
+                this.dispatchEvent({
+                    type: SENSOR_DATA_CHANGED_EVENT,
+                    data: this.data
+                });
+            } catch (ex) {
+                return null;
+            }
+        }
+    }
+
     const SensorStyleDefinitions = {
         co2: {
             url: '../img/sensors/co2.svg',
@@ -42,8 +184,11 @@
             this.modelExternalIdMaps = {};
             this.styleMap = [];
             this.currentHeatmapSensorType = 'temperature';
+            this.dataHelper = null;
 
             this.onSelectedFloorChanged = this.onSelectedFloorChanged.bind(this);
+            this.onSensorDataUpdated = this.onSensorDataUpdated.bind(this);
+            this.getSensorValue = this.getSensorValue.bind(this);
         }
 
         get assetTool() {
@@ -80,6 +225,52 @@
             return true;
         }
 
+        onSelectedFloorChanged(event) {
+            const { levelIndex } = event;
+
+            this.clearHeatmap();
+
+            if (levelIndex === null) {
+                return;
+            }
+
+            const floor = this.levelSelector.floorData[levelIndex];
+            this.renderHeatmapByFloor(floor);
+        }
+
+        onSensorDataUpdated() {
+            this.dataVizTool.updateSurfaceShading(this.getSensorValue);
+        }
+
+        /**
+         * Interface for application to decide the current value for the heatmap
+         * @param {Object} device device
+         * @param {string} sensorType sensor type
+         */
+        getSensorValue(device, sensorType) {
+            //let value = Math.random();
+
+            const { sensors } = this.dataProvider;
+            if (!sensors || sensors.length <= 0) return;
+
+            const sensor = sensors.find(s => s.id == device.id);
+            console.log(sensor, sensorType);
+
+            let cachedData = this.dataHelper.getDataFromCache(sensor.id, sensorType);
+            if (cachedData) {
+                const value = Utility.getClosestValue(cachedData, 1626255000);
+                const range = {
+                    min: cachedData.avgMin,
+                    max: cachedData.avgMax
+                };
+
+                let normalized = Utility.getNormalizedValue(value, range);
+                return normalized;
+            }
+
+            return 0;
+        }
+
         async init() {
             let aecModelData = await viewer.model.getDocumentNode().getDocument().downloadAecModelData();
 
@@ -106,6 +297,32 @@
             this.levelSelector.addEventListener(
                 Autodesk.AEC.FloorSelector.SELECTED_FLOOR_CHANGED,
                 this.onSelectedFloorChanged
+            );
+
+            const model = this.viewer.model;
+            for (let i = 0; i < sensors.length; i++) {
+                const sensor = sensors[i];
+                const assetExtId = sensor.externalId;
+
+                const assetDbId = await this.getAssetViewerId(assetExtId, model);
+                if (!assetDbId) {
+                    console.error(`No viewer object found for Asset External Id \`${assetExtId}\`!`);
+                    continue;
+                }
+
+                const assetBox = await this.getNodeBoxAsync(assetDbId, model);
+                const position = assetBox.center();
+                sensor.position = position;
+
+                const sensorType = sensor.name.toLowerCase();
+                sensor.type = sensorType;
+            }
+
+            this.dataHelper = new SensorDataHelper(this.dataProvider);
+            await this.dataHelper.fetchData(1626192000, 1626620400);
+            this.dataHelper.addEventListener(
+                SENSOR_DATA_CHANGED_EVENT,
+                this.onSensorDataUpdated
             );
         }
 
@@ -182,7 +399,6 @@
             //     '../img/sensors/thermometer.svg'
             // );
 
-            const model = this.viewer.model;
             const viewableData = new DataVizCore.ViewableData();
             viewableData.spriteSize = 24; // Sprites as points of size 24 x 24 pixels
 
@@ -190,22 +406,14 @@
                 const sensor = sensors[i];
                 const assetExtId = sensor.externalId;
 
-                const assetDbId = await this.getAssetViewerId(assetExtId, model);
-                if (!assetDbId) {
-                    console.error(`No viewer object found for Asset External Id \`${assetExtId}\`!`);
+                const sensorDbId = this.sensorDbId;
+                if (!sensor.position) {
                     continue;
                 }
 
-                const sensorDbId = this.sensorDbId;
-                const assetBox = await this.getNodeBoxAsync(assetDbId, model);
-                const position = assetBox.center();
-                sensor.position = position;
-
-                const sensorType = sensor.name.toLowerCase();
-                sensor.type = sensorType;
-
+                const sensorType = sensor.type;
                 const style = this.styleMap[sensorType] || this.styleMap['default'];
-                const viewable = new DataVizCore.SpriteViewable(position, style, sensorDbId);
+                const viewable = new DataVizCore.SpriteViewable(sensor.position, style, sensorDbId);
                 viewable.externalId = sensor.id;
                 this.dbId2DeviceIdMap[sensorDbId] = assetExtId;
 
@@ -215,17 +423,12 @@
                     this.deviceId2DbIdMap[assetExtId].push(sensorDbId);
                 }
 
-                this.sensorIdPrefix++;
+                this.sensorDbId++;
                 viewableData.addViewable(viewable);
             }
 
             await viewableData.finish();
             this.dataVizTool.addViewables(viewableData);
-
-            // this.viewer.addEventListener(DataVizCore.MOUSE_CLICK, (event) => {
-            //     console.log(event);
-            //     this.dataVizTool.highlightViewables(event.dbId);
-            // });
         }
 
         getLevel(currentElevation, floors) {
@@ -236,19 +439,6 @@
             } else {
                 return floors.find(f => f.zMin <= currentElevation && f.zMax >= currentElevation);
             }
-        }
-
-        onSelectedFloorChanged(event) {
-            const { levelIndex } = event;
-
-            this.clearHeatmap();
-
-            if (levelIndex === null) {
-                return;
-            }
-
-            const floor = this.levelSelector.floorData[levelIndex];
-            this.renderHeatmapByFloor(floor);
         }
 
         clearHeatmap() {
@@ -285,17 +475,7 @@
             const supportedTypes = Array.from(new Set(data.map(d => d.type)));
             supportedTypes.forEach(type => this.dataVizTool.registerSurfaceShadingColors(type, [0xff0000, 0x0000ff]));
 
-            /**
-             * Interface for application to decide the current value for the heatmap
-             * @param {Object} device device
-             * @param {string} sensorType sensor type
-             */
-            function getSensorValue(device, sensorType) {
-                let value = Math.random();
-                return value;
-            }
-
-            this.dataVizTool.renderSurfaceShading(floor.name, this.currentHeatmapSensorType, getSensorValue);
+            this.dataVizTool.renderSurfaceShading(floor.name, this.currentHeatmapSensorType, this.getSensorValue);
         }
 
         async unload() {
