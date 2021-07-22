@@ -526,6 +526,6 @@
             return true;
         }
     }
-
+    BIM360IotConnectedExtension.SENSOR_DATA_CHANGED_EVENT = SENSOR_DATA_CHANGED_EVENT;
     Autodesk.Viewing.theExtensionManager.registerExtension('BIM360IotConnectedExtension', BIM360IotConnectedExtension);
 })();
