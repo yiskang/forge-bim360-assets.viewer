@@ -258,8 +258,27 @@
             return dataVizExt;
         }
 
+        waitForModelRootAdded() {
+            return new Promise((resolve, reject) => {
+                if (this.assetTool?.roomModel)
+                    return resolve();
+
+                const onModelRootAdded = (event) => {
+                    console.log(event);
+                    resolve();
+                };
+
+                this.viewer.addEventListener(
+                    Autodesk.Viewing.MODEL_ROOT_LOADED_EVENT,
+                    onModelRootAdded,
+                    { once: true }
+                );
+            });
+        }
+
         async load() {
-            await viewer.waitForLoadDone();
+            //await viewer.waitForLoadDone();
+            await this.waitForModelRootAdded();
 
             await this.init();
             await this.render();
@@ -272,12 +291,58 @@
         }
 
         async createUI() {
-
             const heatmapVisibilityToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapVisibilityTool');
             heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
             heatmapVisibilityToolButton.icon.classList.add('glyphicon');
             heatmapVisibilityToolButton.icon.classList.add('glyphicon-bim360-icon');
             heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
+
+            const heatmapTimeBackwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeBackwardTool');
+            heatmapTimeBackwardToolButton.setToolTip('Backward Heatmap Time');
+            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon');
+            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon-bim360-icon');
+            heatmapTimeBackwardToolButton.setIcon('glyphicon-backward');
+            heatmapTimeBackwardToolButton.onClick = () => {
+                if (!this.isHeatMapVisible) return;
+
+                this.currentTime = new Date(this.currentTime.getTime() - (1 * 60 * 60 * 1000));
+                console.log('Move backward 1hr', this.currentTime);
+
+                if (Utility.getTimeInEpochSeconds(this.currentTime) < this.dataHelper.timeRange.min) {
+                    let date = new Date(this.dataHelper.timeRange.min * 1000);
+                    console.warn(`Current time \`${this.currentTime}\` is smaller than time range minimum, so reset it to \`${date}\``);
+
+                    this.currentTime = date;
+                    return;
+                }
+
+                this.onSensorDataUpdated();
+                updateHeatmap();
+            };
+
+            const heatmapTimeForwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeForwardTool');
+            heatmapTimeForwardToolButton.setToolTip('Forward Heatmap Time');
+            heatmapTimeForwardToolButton.icon.classList.add('glyphicon');
+            heatmapTimeForwardToolButton.icon.classList.add('glyphicon-bim360-icon');
+            heatmapTimeForwardToolButton.setIcon('glyphicon-forward');
+            heatmapTimeForwardToolButton.onClick = () => {
+                if (!this.isHeatMapVisible) return;
+
+                this.currentTime = new Date(this.currentTime.getTime() + (1 * 60 * 60 * 1000));
+                console.log('Move forward 1hr', this.currentTime);
+
+                if (Utility.getTimeInEpochSeconds(this.currentTime) > this.dataHelper.timeRange.max) {
+                    let date = new Date(this.dataHelper.timeRange.max * 1000);
+                    console.warn(`Current time \`${this.currentTime}\` is greater than time range maximum, so reset it to \`${date}\``);
+
+                    this.currentTime = date;
+                    return;
+                }
+
+                this.onSensorDataUpdated();
+                updateHeatmap();
+            };
+
             const onHeatmapToolVisibleChanged = (visible) => {
                 if (this.isHeatMapVisible) {
                     heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
@@ -286,31 +351,64 @@
                     heatmapVisibilityToolButton.setToolTip('Show Heatmap');
                     heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
                 }
+
+                heatmapTimeBackwardToolButton.setVisible(visible);
+                heatmapTimeForwardToolButton.setVisible(visible);
+            };
+
+            const updateHeatmap = () => {
+                this.clearHeatmap();
+
+                const floor = this.levelSelector.floorData[this.levelSelector.currentFloor];
+                this.renderHeatmapByFloor(floor);
             };
 
             heatmapVisibilityToolButton.onClick = () => {
                 if (this.isHeatMapVisible) {
                     onHeatmapToolVisibleChanged(true);
-
                     this.clearHeatmap();
                 } else {
                     onHeatmapToolVisibleChanged(false);
-
-                    const floor = this.levelSelector.floorData[this.levelSelector.currentFloor];
-                    this.renderHeatmapByFloor(floor);
+                    updateHeatmap();
                 }
             };
 
             heatmapVisibilityToolButton.addEventListener(
                 Autodesk.Viewing.UI.Button.Event.VISIBILITY_CHANGED,
-                onHeatmapToolVisibleChanged
+                (event) => onHeatmapToolVisibleChanged(event.isVisible)
             );
 
             heatmapVisibilityToolButton.setVisible(false);
 
-            const subToolbar = this.assetTool.subToolbar;
-            subToolbar.addControl(heatmapVisibilityToolButton);
-            subToolbar.heatmapVisibilityToolButton = heatmapVisibilityToolButton;
+            const addButtons = (subToolbar) => {
+                subToolbar.addControl(heatmapVisibilityToolButton);
+                subToolbar.addControl(heatmapTimeBackwardToolButton);
+                subToolbar.addControl(heatmapTimeForwardToolButton);
+                subToolbar.heatmapVisibilityToolButton = heatmapVisibilityToolButton;
+                subToolbar.heatmapTimeBackwardToolButton = heatmapTimeBackwardToolButton;
+                subToolbar.heatmapTimeForwardToolButton = heatmapTimeForwardToolButton;
+            }
+
+            const onSubToolbarCreated = (event) => {
+                if (event.control._id != 'toolbar-bim360-tools') return;
+
+                this.viewer.toolbar.removeEventListener(
+                    Autodesk.Viewing.UI.ControlGroup.Event.CONTROL_ADDED,
+                    onSubToolbarCreated
+                );
+
+                addButtons(event.control);
+            };
+
+            let subToolbar = this.assetTool.subToolbar;
+            if (!subToolbar) {
+                this.viewer.toolbar.addEventListener(
+                    Autodesk.Viewing.UI.ControlGroup.Event.CONTROL_ADDED,
+                    onSubToolbarCreated
+                );
+            } else {
+                addButtons(subToolbar);
+            }
         }
 
         onSelectedFloorChanged(event) {
@@ -350,7 +448,7 @@
 
             let cachedData = this.dataHelper.getDataFromCache(sensor.id, sensorType);
             if (cachedData) {
-                const value = Utility.getClosestValue(cachedData, this.currentTime);
+                const value = Utility.getClosestValue(cachedData, Utility.getTimeInEpochSeconds(this.currentTime));
                 const range = {
                     min: cachedData.avgMin,
                     max: cachedData.avgMax
@@ -415,7 +513,7 @@
             const timeRange = await this.dataHelper.getTimeRange();
             await this.dataHelper.fetchData(timeRange.min, timeRange.max);
 
-            this.currentTime = new Date(~~(timeRange.min + 1 * 60 * 60 * 1000 * 24));
+            this.currentTime = new Date((new Date(timeRange.min * 1000).getTime() + (1 * 60 * 60 * 1000 * 24)));
 
             this.dataHelper.addEventListener(
                 SENSOR_DATA_CHANGED_EVENT,
