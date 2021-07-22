@@ -224,10 +224,13 @@
             this.currentHeatmapSensorType = 'temperature';
             this.dataHelper = null;
             this.currentTime = null;
+            this.isHeatMapVisible = false;
 
             this.onSelectedFloorChanged = this.onSelectedFloorChanged.bind(this);
             this.onSensorDataUpdated = this.onSensorDataUpdated.bind(this);
             this.getSensorValue = this.getSensorValue.bind(this);
+            this.createUI = this.createUI.bind(this);
+            this.onToolbarCreated = this.onToolbarCreated.bind(this);
         }
 
         get assetTool() {
@@ -264,15 +267,65 @@
             return true;
         }
 
+        async onToolbarCreated() {
+            await this.createUI();
+        }
+
+        async createUI() {
+
+            const heatmapVisibilityToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapVisibilityTool');
+            heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
+            heatmapVisibilityToolButton.icon.classList.add('glyphicon');
+            heatmapVisibilityToolButton.icon.classList.add('glyphicon-bim360-icon');
+            heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
+            const onHeatmapToolVisibleChanged = (visible) => {
+                if (this.isHeatMapVisible) {
+                    heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
+                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-open');
+                } else {
+                    heatmapVisibilityToolButton.setToolTip('Show Heatmap');
+                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
+                }
+            };
+
+            heatmapVisibilityToolButton.onClick = () => {
+                if (this.isHeatMapVisible) {
+                    onHeatmapToolVisibleChanged(true);
+
+                    this.clearHeatmap();
+                } else {
+                    onHeatmapToolVisibleChanged(false);
+
+                    const floor = this.levelSelector.floorData[this.levelSelector.currentFloor];
+                    this.renderHeatmapByFloor(floor);
+                }
+            };
+
+            heatmapVisibilityToolButton.addEventListener(
+                Autodesk.Viewing.UI.Button.Event.VISIBILITY_CHANGED,
+                onHeatmapToolVisibleChanged
+            );
+
+            heatmapVisibilityToolButton.setVisible(false);
+
+            const subToolbar = this.assetTool.subToolbar;
+            subToolbar.addControl(heatmapVisibilityToolButton);
+            subToolbar.heatmapVisibilityToolButton = heatmapVisibilityToolButton;
+        }
+
         onSelectedFloorChanged(event) {
             const { levelIndex } = event;
 
             this.clearHeatmap();
 
-            if (levelIndex === null) {
+            const heatmapVisibilityToolButton = this.assetTool.subToolbar.heatmapVisibilityToolButton;
+            heatmapVisibilityToolButton.setVisible(false);
+
+            if (levelIndex === undefined) {
                 return;
             }
 
+            heatmapVisibilityToolButton.setVisible(true);
             const floor = this.levelSelector.floorData[levelIndex];
             this.renderHeatmapByFloor(floor);
         }
@@ -486,12 +539,15 @@
         }
 
         clearHeatmap() {
+            this.isHeatMapVisible = false;
             this.dataVizTool.removeSurfaceShading();
         }
 
         async renderHeatmapByFloor(floor) {
             const { sensors } = this.dataProvider;
             if (!floor || !sensors || sensors.length <= 0) return;
+
+            this.isHeatMapVisible = true;
 
             const data = [];
             for (let i = 0; i < sensors.length; i++) {

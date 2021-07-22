@@ -146,6 +146,14 @@ namespace bim360assets.Models.Repositories
             _db.Set<TEntity>().Attach(entity);
             _db.Set<TEntity>().Remove(entity);
         }
+        public virtual async Task<bool> Delete(Expression<Func<TEntity, bool>> predicate)
+        {
+            var dbSet = _db.Set<TEntity>();
+            var query = dbSet.Where(predicate);
+            dbSet.RemoveRange(query);
+
+            return await Task.FromResult(true);
+        }
 
         public virtual async Task<bool> SaveChangesAsync()
         {
@@ -156,6 +164,19 @@ namespace bim360assets.Models.Repositories
         {
             _db.Set<TEntity>().Attach(entity);
             _db.Entry(entity).State = EntityState.Modified;
+        }
+
+        public virtual async Task<bool> Clear()
+        {
+            var dbSet = _db.Set<TEntity>();
+            dbSet.RemoveRange(dbSet);
+
+            return await Task.FromResult(true);
+        }
+
+        public virtual async Task<bool> Exists(Expression<Func<TEntity, bool>> predicate)
+        {
+            return await _db.Set<TEntity>().AnyAsync(predicate);
         }
     }
 }

@@ -215,18 +215,21 @@ namespace bim360assets.Controllers
             }
         }
 
-        private async Task<List<Record>> MockRecordsBySensor(Sensor sensor)
+        private async Task<List<Record>> MockRecordsBySensor(Sensor sensor, List<WeatherData> weatherData)
         {
             if (sensor == null)
                 throw new InvalidOperationException();
-
-            var weatherData = await this.weatherDataService.GetWeatherDataForPastDays();
 
             var result = new List<Record>();
 
             foreach (var data in weatherData)
             {
                 var dt = (new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Local)).AddSeconds(data.Timestamp).ToUniversalTime();
+
+                var isRecordExisted = await this.recordRepository.Exists(r => r.SensorId == sensor.Id && r.CreatedAt.CompareTo(dt) == 0);
+                if (isRecordExisted)
+                    continue;
+
                 Record record = null;
                 if (sensor.Name == "Temperature")
                 {
@@ -265,18 +268,26 @@ namespace bim360assets.Controllers
 
         [HttpPost]
         [Route("api/iot/projects/{projectId}/records:batch-mock")]
-        public async Task<IActionResult> MockRecordsForAllSensors([FromRoute] string projectId)
+        public async Task<IActionResult> MockRecordsForAllSensors([FromRoute] string projectId, [FromHeader(Name ="x-ads-force")] bool xAdsForce)
         {
             try
             {
+                if (xAdsForce == true)
+                {
+                    await this.recordRepository.Clear();
+                    await this.recordRepository.SaveChangesAsync();
+                }
+
                 var sensors = await this.sensorRepository.GetAll("Project", s => s.Project.ExternalId == projectId);
+                var weatherData = await this.weatherDataService.GetWeatherDataForPastDays();
+
                 var result = new Dictionary<string, List<Record>>();
 
                 foreach (var sensor in sensors)
                 {
                     try
                     {
-                        var records = await this.MockRecordsBySensor(sensor);
+                        var records = await this.MockRecordsBySensor(sensor, weatherData);
                         result.Add(sensor.ExternalId, records);
                     }
                     catch (Exception ex)
@@ -287,7 +298,7 @@ namespace bim360assets.Controllers
 
                 return Ok(result);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 return BadRequest();
             }
@@ -295,7 +306,7 @@ namespace bim360assets.Controllers
 
         [HttpPost]
         [Route("api/iot/projects/{projectId}/sensors/{sensorId}/records:mock")]
-        public async Task<IActionResult> MockSensorValuesById([FromRoute] string projectId, [FromRoute] string sensorId)
+        public async Task<IActionResult> MockSensorValuesById([FromRoute] string projectId, [FromRoute] string sensorId, [FromHeader(Name ="x-ads-force")] bool xAdsForce)
         {
             try
             {
@@ -304,7 +315,14 @@ namespace bim360assets.Controllers
                 if (sensor == null)
                     return NotFound();
 
-                var result = this.MockRecordsBySensor(sensor);
+                if (xAdsForce == true)
+                {
+                    await this.recordRepository.Delete(r => r.SensorId == sensor.Id);
+                    await this.recordRepository.SaveChangesAsync();
+                }
+
+                var weatherData = await this.weatherDataService.GetWeatherDataForPastDays();
+                var result = await this.MockRecordsBySensor(sensor, weatherData);
 
                 return Ok(result);
             }

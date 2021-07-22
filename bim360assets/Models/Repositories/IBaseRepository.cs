@@ -43,7 +43,10 @@ namespace bim360assets.Models.Repositories
         TEntity Add(TEntity entity);
         void AddRange(IEnumerable<TEntity> entities);
         void Delete(TKey id);
+        Task<bool> Delete(Expression<Func<TEntity, bool>> predicate);
         void Update(TEntity entity);
         Task<bool> SaveChangesAsync();
+        Task<bool> Clear();
+        Task<bool> Exists(Expression<Func<TEntity, bool>> predicate);
     }
 }
