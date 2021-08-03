@@ -91,6 +91,32 @@
             return this.dataProvider.sensors;
         }
 
+        getDataRangeOfCache(sensorType) {
+            const data = Object.values(this.data).flat().filter(d => d.name.toLowerCase() == sensorType.toLowerCase());
+            const max = Math.max(...data.map(d => d.avgMax));
+            const min = Math.min(...data.map(d => d.avgMin));
+
+            const { sensors } = this.dataProvider;
+            if (!sensors || sensors.length <= 0)
+                return null;
+
+            let firstData = data[0];
+            const sensor = sensors.find(s => s.id == firstData.sensorId);
+
+            if (!sensor)
+                return null;
+
+            let dataUnit = sensor.dataUnit;
+            dataUnit = dataUnit.toLowerCase() === "celsius" ? "°C" : dataUnit;
+            dataUnit = dataUnit.toLowerCase() === "fahrenheit" ? "°F" : dataUnit;
+
+            return {
+                dataUnit,
+                max,
+                min
+            };
+        }
+
         getDataFromCache(sensorId, sensorType) {
             if (this.data.hasOwnProperty(sensorId)) {
                 const data = this.data[sensorId];
@@ -212,6 +238,238 @@
         },
     };
 
+    const HeatmapGradientMap = {
+        temperature: [0x0000ff, 0x00ff00, 0xffff00, 0xff0000],
+        humidity: [0x00f260, 0x0575e6],
+        co2: [0x1e9600, 0xfff200, 0xff0000],
+    };
+
+    class BIM360SensorTooltip extends THREE.EventDispatcher {
+        constructor(parent) {
+            super();
+
+            this.parent = parent;
+            this.init();
+        }
+
+        get viewer() {
+            return this.parent.viewer;
+        }
+
+        get dataVizTool() {
+            return this.parent.dataVizTool;
+        }
+
+        init() {
+            const container = document.createElement('div');
+            container.classList.add('bim360-sensor-tooltip');
+            this.container = container;
+
+            const bodyContainer = document.createElement('div');
+            bodyContainer.classList.add('bim360-sensor-tooltip-body');
+            container.appendChild(bodyContainer);
+            this.bodyContainer = bodyContainer;
+
+            bodyContainer.innerHTML = 'No Data';
+
+            this.viewer.container.appendChild(container);
+        }
+
+        setVisible(visible) {
+            if (visible) {
+                this.bodyContainer.classList.add('visible');
+            } else {
+                this.bodyContainer.classList.remove('visible');
+            }
+        }
+
+        setPosition(point) {
+            const contentRect = this.bodyContainer.getBoundingClientRect();
+            const offsetX = contentRect.width / 2;
+            const spriteSize = this.dataVizTool.viewableData.spriteSize;
+            const offsetY = contentRect.height + 0.7 * spriteSize / this.parent.viewer.getWindow().devicePixelRatio;
+
+            const pos = new THREE.Vector3(
+                point.x - offsetX,
+                point.y - offsetY,
+                0
+            );
+
+            this.container.style.transform = `translate3d(${pos.x}px, ${pos.y}px, ${pos.z}px)`;
+        }
+
+        setPositionByWordPoint(point) {
+            this.setPosition(this.viewer.worldToClient(point));
+        }
+
+        async show(sensor) {
+            if (!sensor) return;
+
+            this.bodyContainer.innerHTML = '';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.classList.add('bim360-sensor-tooltip-name');
+            this.bodyContainer.appendChild(nameSpan);
+
+            const assetInfo = this.parent.dataProvider.assetInfoCache[sensor.externalId];
+            let nameString = 'Unknown asset';
+            if (assetInfo) {
+                nameString = `Asset [${assetInfo.assetId}]`;
+            }
+            nameSpan.innerHTML = `${nameString} ${sensor.name}`;
+
+            const valueSpan = document.createElement('span');
+            valueSpan.classList.add('bim360-sensor-tooltip-value');
+            this.bodyContainer.appendChild(valueSpan);
+
+            let cachedData = this.parent.dataHelper.getDataFromCache(sensor.id, sensor.name);
+            if (cachedData) {
+                let value = Utility.getClosestValue(cachedData, Utility.getTimeInEpochSeconds(this.parent.currentTime));
+                let valueString = `${value.toFixed(2)}`;
+                if (sensor.dataUnit)
+                    valueString += ` ${sensor.dataUnit}`;
+
+                valueSpan.innerHTML = valueString;
+            }
+
+            this.setVisible(true);
+            this.setPosition(this.viewer.worldToClient(sensor.position));
+        }
+
+        hide() {
+            this.bodyContainer.innerHTML = 'No Data';
+            this.setVisible(false);
+        }
+    }
+
+    class BIM360HeatmapColorGradientBar {
+        constructor(parent) {
+            this.parent = parent;
+        }
+
+        get viewer() {
+            return this.parent.viewer;
+        }
+
+        get dataHelper() {
+            return this.parent.dataHelper;
+        }
+
+        get currentType() {
+            return this.parent.currentHeatmapSensorType;
+        }
+
+        build() {
+            const gradientStyle = this.generateGradientStyle(HeatmapGradientMap, this.currentType);
+            const labelData = this.generateMarks(this.currentType);
+
+            const container = document.createElement('div');
+            container.classList.add('bim360-heatmap-color-gradient-bar');
+            this.container = container;
+
+            const rootSpan = document.createElement('span');
+            rootSpan.classList.add('bim360-heatmap-color-gradient-bar-root');
+            container.appendChild(rootSpan);
+
+            const railSpan = document.createElement('span');
+            railSpan.classList.add('bim360-heatmap-color-gradient-bar-rail');
+            railSpan.style.backgroundImage = gradientStyle;
+            rootSpan.appendChild(railSpan);
+
+            for (let i = 0; i < labelData.length; i++) {
+                let ld = labelData[i];
+                let markSpan = document.createElement('span');
+                markSpan.classList.add('bim360-heatmap-color-gradient-bar-mark');
+                markSpan.style.left = `${ld.value}%`;
+                rootSpan.appendChild(markSpan);
+
+                let markLabelSpan = document.createElement('span');
+                markLabelSpan.classList.add('bim360-heatmap-color-gradient-bar-mark-label');
+                markLabelSpan.style.left = `${ld.value}%`;
+                markLabelSpan.innerHTML = ld.label;
+                rootSpan.appendChild(markLabelSpan);
+            }
+
+            this.viewer.container.appendChild(container);
+        }
+
+        generateGradientStyle(gradientMap, type) {
+            let colorStops = gradientMap[type];
+            colorStops = colorStops ? colorStops : [0xf9d423, 0xff4e50]; // Default colors.
+
+            const colorStopsHex = colorStops.map((c) => `#${c.toString(16).padStart(6, "0")}`);
+            return `linear-gradient(.25turn, ${colorStopsHex.join(", ")})`;
+        }
+
+        generateMarks(type, totalMarkers) {
+            let localMarks = [];
+            totalMarkers = totalMarkers || 4; // Generate [1, 2, 3, ..., totalMarkers ]
+            const seeds = Array.from({ length: totalMarkers }, (_, x) => x + 1);
+            const valueOffset = 100.0 / (totalMarkers + 1.0);
+
+            // Get the selected property's range min, max and dataUnit value from Ref App
+            let dataRange = this.dataHelper.getDataRangeOfCache(type);
+
+            const delta = (dataRange.max - dataRange.min) / (totalMarkers + 1.0);
+            localMarks = seeds.map((i) => {
+                return {
+                    value: i * valueOffset,
+                    label: `${(dataRange.min + i * delta).toFixed()}${dataRange.dataUnit}`,
+                };
+            });
+            return localMarks;
+        }
+
+        destroy() {
+            if (!this.container) return;
+
+            this.viewer.container.removeChild(this.container);
+        }
+    }
+
+    class BIM360SensorDataGraphPanel extends Autodesk.Viewing.UI.DockingPanel {
+        constructor(viewer, dataProvider) {
+            const options = {};
+
+            //  Height adjustment for scroll container, offset to height of the title bar and footer by default.
+            if (!options.heightAdjustment)
+                options.heightAdjustment = 70;
+
+            if (!options.marginTop)
+                options.marginTop = 0;
+
+            //options.addFooter = false;
+
+            super(viewer.container, viewer.container.id + 'BIM360SensorDataGraphPanel', 'Sensor Data History', options);
+
+            this.container.classList.add('bim360-docking-panel');
+            this.container.classList.add('bim360-sensor-data-graph-panel');
+            this.createScrollContainer(options);
+
+            this.viewer = viewer;
+            this.options = options;
+            this.uiCreated = false;
+
+            this.addVisibilityListener(async (show) => {
+                if (!show) return;
+
+                if (!this.uiCreated)
+                    await this.createUI();
+            });
+        }
+
+        createUI() {
+            this.uiCreated = true;
+
+            const div = document.createElement('div');
+
+            this.scrollContainer.appendChild(div);
+        }
+
+        uninitialize() {
+        }
+    }
+
     class BIM360IotConnectedExtension extends Autodesk.Viewing.Extension {
         constructor(viewer, options) {
             super(viewer, options);
@@ -225,9 +483,13 @@
             this.dataHelper = null;
             this.currentTime = null;
             this.isHeatMapVisible = false;
+            this.tooltip = new BIM360SensorTooltip(this);
+            this.heatmapColorGradientBar = new BIM360HeatmapColorGradientBar(this);
 
             this.onSelectedFloorChanged = this.onSelectedFloorChanged.bind(this);
             this.onSensorDataUpdated = this.onSensorDataUpdated.bind(this);
+            this.onSensorHovered = this.onSensorHovered.bind(this);
+            this.onSensorClicked = this.onSensorClicked.bind(this);
             this.getSensorValue = this.getSensorValue.bind(this);
             this.createUI = this.createUI.bind(this);
             this.onToolbarCreated = this.onToolbarCreated.bind(this);
@@ -258,7 +520,7 @@
             return dataVizExt;
         }
 
-        waitForModelRootAdded() {
+        waitForRoomModelRootAdded() {
             return new Promise((resolve, reject) => {
                 if (this.assetTool?.roomModel)
                     return resolve();
@@ -278,7 +540,7 @@
 
         async load() {
             //await viewer.waitForLoadDone();
-            await this.waitForModelRootAdded();
+            await this.waitForRoomModelRootAdded();
 
             await this.init();
             await this.render();
@@ -344,16 +606,13 @@
             };
 
             const onHeatmapToolVisibleChanged = (visible) => {
-                if (this.isHeatMapVisible) {
-                    heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
-                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-open');
-                } else {
-                    heatmapVisibilityToolButton.setToolTip('Show Heatmap');
-                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
-                }
-
                 heatmapTimeBackwardToolButton.setVisible(visible);
                 heatmapTimeForwardToolButton.setVisible(visible);
+                if (visible) {
+                    this.heatmapColorGradientBar.build();
+                } else {
+                    this.heatmapColorGradientBar.destroy();
+                }
             };
 
             const updateHeatmap = () => {
@@ -365,12 +624,19 @@
 
             heatmapVisibilityToolButton.onClick = () => {
                 if (this.isHeatMapVisible) {
-                    onHeatmapToolVisibleChanged(true);
+                    heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
+                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-open');
+
                     this.clearHeatmap();
                 } else {
-                    onHeatmapToolVisibleChanged(false);
+                    heatmapVisibilityToolButton.setToolTip('Show Heatmap');
+                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
+
                     updateHeatmap();
                 }
+
+                heatmapTimeBackwardToolButton.setVisible(this.isHeatMapVisible);
+                heatmapTimeForwardToolButton.setVisible(this.isHeatMapVisible);
             };
 
             heatmapVisibilityToolButton.addEventListener(
@@ -423,13 +689,34 @@
                 return;
             }
 
-            heatmapVisibilityToolButton.setVisible(true);
             const floor = this.levelSelector.floorData[levelIndex];
             this.renderHeatmapByFloor(floor);
+            heatmapVisibilityToolButton.setVisible(true);
         }
 
         onSensorDataUpdated() {
             this.dataVizTool.updateSurfaceShading(this.getSensorValue);
+        }
+
+        onSensorHovered(event) {
+            if (event.hovering && this.dbId2DeviceIdMap) {
+                const deviceId = this.dbId2DeviceIdMap[event.dbId];
+
+                const { sensors } = this.dataProvider;
+                if (!sensors || sensors.length <= 0) return;
+
+                const sensor = sensors.find(s => s.externalId == deviceId);
+
+                if (!sensor) return;
+
+                this.tooltip.show(sensor);
+            } else {
+                this.tooltip.hide();
+            }
+        }
+
+        onSensorClicked(event) {
+            console.log(event);
         }
 
         /**
@@ -518,6 +805,16 @@
             this.dataHelper.addEventListener(
                 SENSOR_DATA_CHANGED_EVENT,
                 this.onSensorDataUpdated
+            );
+
+            this.viewer.addEventListener(
+                Autodesk.DataVisualization.Core.MOUSE_HOVERING,
+                this.onSensorHovered
+            );
+
+            this.viewer.addEventListener(
+                Autodesk.DataVisualization.Core.MOUSE_CLICK,
+                this.onSensorClicked
             );
         }
 
@@ -671,12 +968,15 @@
             await this.dataVizTool.setupSurfaceShading(model, heatmapData);
 
             const supportedTypes = Array.from(new Set(data.map(d => d.type)));
-            supportedTypes.forEach(type => this.dataVizTool.registerSurfaceShadingColors(type, [0xff0000, 0x0000ff]));
+            supportedTypes.forEach(type => this.dataVizTool.registerSurfaceShadingColors(type, HeatmapGradientMap[type]));
 
             this.dataVizTool.renderSurfaceShading(floor.name, this.currentHeatmapSensorType, this.getSensorValue);
         }
 
         async unload() {
+            this.clearHeatmap();
+            this.dataVizTool.removeAllViewables();
+
             return true;
         }
     }

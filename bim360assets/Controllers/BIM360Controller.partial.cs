@@ -43,7 +43,7 @@ namespace bim360assets.Controllers
         {
             "External Id",
             "Sensor.[0].Id", "Sensor.[0].Name", "Sensor.[0].DataType",
-            "Sensor.[0].DateUnit", "Sensor.[0].RangeMin", "Sensor.[0].RangeMax"
+            "Sensor.[0].DataUnit", "Sensor.[0].RangeMin", "Sensor.[0].RangeMax"
         };
 
         private string sensorNameCustomAttr

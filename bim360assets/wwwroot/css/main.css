@@ -1,14 +1,16 @@
-﻿html, body{
+﻿html,
+body {
   min-height: 100%;
   height: 100%;
 }
 
-.fill{
+.fill {
   height: calc(100vh - 100px);
 }
 
 body {
-  padding-top: 60px; /* space for the top nav bar */
+  padding-top: 60px;
+  /* space for the top nav bar */
   margin-right: 30px;
 }
 
@@ -42,7 +44,7 @@ body {
 }
 
 .bim360-asset-list-panel {
-  background: rgba(34,34,34,.9) !important;
+  background: rgba(34, 34, 34, .9) !important;
   max-height: 750px;
   max-width: 200px;
   width: 750px;
@@ -70,23 +72,27 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .bim360-asset-list-panel .datatable .clusterize-content td:nth-child(1) {
   min-width: 65px;
 }
+
 .bim360-asset-list-panel .datatable .clusterize-content td:nth-child(2),
-  .bim360-asset-list-panel .datatable .clusterize-content td:nth-child(3) {
+.bim360-asset-list-panel .datatable .clusterize-content td:nth-child(3) {
   /* min-width: 61px; */
   max-width: 250px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 /* .bim360-asset-list-panel .datatable .clusterize-content td:nth-child(3) {
   min-width: 297px;
 } */
 .bim360-asset-list-panel .datatable .clusterize-content td:nth-child(4) {
   min-width: 92px;
 }
+
 .bim360-asset-list-panel .datatable .clusterize-content td:nth-child(5) {
   min-width: 43px;
 }
@@ -99,12 +105,13 @@ body {
   background-color: #4a4747 !important;
 } */
 
-.bim360-asset-list-panel .datatable .table-striped>tbody>tr:nth-child(odd)>td, .adsk-viewing-viewer .datatable .table-striped>tbody>tr:nth-child(odd)>th {
+.bim360-asset-list-panel .datatable .table-striped>tbody>tr:nth-child(odd)>td,
+.adsk-viewing-viewer .datatable .table-striped>tbody>tr:nth-child(odd)>th {
   background-color: transparent;
 }
 
 .bim360-asset-list-panel .datatable .table-striped tr:hover:not(.active) {
-  background: rgba(0,0,0,.4)!important;
+  background: rgba(0, 0, 0, .4) !important;
 }
 
 .bim360-asset-list-panel .datatable .table-striped tr.active {
@@ -133,7 +140,7 @@ body {
 } */
 
 /* omit tr color from bootstrap */
-.table-striped > tbody > tr:nth-of-type(2n+1) {
+.table-striped>tbody>tr:nth-of-type(2n+1) {
   background-color: transparent;
 }
 
@@ -168,4 +175,149 @@ body {
 
 .glyphicon-bim360-icon {
   font-size: 22px !important;
+}
+
+/** DataViz Sensor Tooltip **/
+/*https://www.w3schools.com/howto/tryit.asp?filename=tryhow_css_tooltip*/
+.bim360-sensor-tooltip {
+  visibility: hidden;
+  position: absolute;
+  display: inline-block;
+  border-bottom: 1px dotted black;
+  top: 0;
+  left: 0;
+  width: 170px;
+}
+
+.bim360-sensor-tooltip .bim360-sensor-tooltip-body {
+  width: 170px;
+  background-color: #555;
+  color: #fff;
+  text-align: center;
+  border-radius: 6px;
+  padding: 5px 0;
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  margin-left: -85px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  visibility: hidden;
+  width: 170px;
+  background-color: #555;
+  color: #fff;
+  text-align: center;
+  border-radius: 6px;
+  padding: 5px 0;
+  position: absolute;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.3s;
+  font-size: 12px;
+}
+
+.bim360-sensor-tooltip .bim360-sensor-tooltip-body::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #555 transparent transparent transparent;
+}
+
+.bim360-sensor-tooltip .bim360-sensor-tooltip-body.visible {
+  visibility: visible;
+  opacity: 1;
+}
+
+.bim360-sensor-tooltip-name {
+  display: flex;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 12px;
+  padding-top: 1px;
+  padding-bottom: 3px;
+}
+
+.bim360-sensor-tooltip-value {
+  font-size: 13px;
+  display: flex;
+  justify-content: center;
+}
+
+/** DataViz Heatmap Color Gradient Bar **/
+.bim360-heatmap-color-gradient-bar {
+  top: 10px;
+  width: 75%;
+  z-index: 1;
+  display: flex;
+  height: 10%;
+  justify-content: center;
+  position: absolute;
+  pointer-events: none;
+}
+
+.bim360-heatmap-color-gradient-bar-root {
+  height: 2px;
+  display: inline-block;
+  padding: 13px 0;
+  position: relative;
+  box-sizing: content-box;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  color: #bdbdbd;
+  cursor: default;
+  pointer-events: none;
+  width: 30%;
+  margin: 1%;
+  margin-top: 20px;
+}
+
+.bim360-heatmap-color-gradient-bar-rail {
+  height: 10px;
+  opacity: 1;
+  left: 0;
+  border-radius: 10px;
+  width: 100%;
+  display: block;
+  position: absolute;
+  background-color: currentColor;
+}
+
+.bim360-heatmap-color-gradient-bar-mark {
+  background-color: #ffffff;
+  height: 10px;
+  width: 1px;
+  left: 0px;
+  position: absolute;
+  border-radius: 1px;
+}
+
+.bim360-heatmap-color-gradient-bar-mark-label {
+  top: 26px;
+  color: #000000;
+  position: absolute;
+  font-size: 1.375rem;
+  transform: translateX(-50%);
+  font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+  font-weight: 400;
+  line-height: 1.43;
+  white-space: nowrap;
+  letter-spacing: 0.01071em;
+}
+
+/** DataViz sensor data graph panel **/
+.bim360-sensor-data-graph-panel {
+  max-width: 315px;
+  max-height: 280px;
+  width: 315px;
+  height: 280px;
+  left: 10px;
+  top: 225px;
+}
+
+.bim360-sensor-data-graph-panel .docking-panel-footer {
+  z-index: 1;
 }
