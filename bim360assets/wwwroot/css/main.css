@@ -467,12 +467,19 @@ body {
 
 /** DataViz sensor data graph panel **/
 .bim360-sensor-data-graph-panel {
-  max-width: 315px;
-  max-height: 280px;
-  width: 315px;
-  height: 280px;
-  left: 10px;
-  top: 225px;
+  /* background: rgba(34, 34, 34, .9) !important; */
+  /* max-width: 480px;
+  max-height: 380px;
+  width: 480px;
+  height: 244px; */
+  max-height: 640px;
+  max-width: 621px;
+  width: 621px;
+  height: 273px;
+}
+
+.bim360-sensor-data-graph-panel .chart-container {
+  height: 100%;
 }
 
 .bim360-sensor-data-graph-panel .docking-panel-footer {

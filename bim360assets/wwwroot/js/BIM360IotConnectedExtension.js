@@ -74,6 +74,38 @@
         getTimeInEpochSeconds: function (time) {
             const epochSeconds = new Date(time).getTime() / 1000.0;
             return ~~epochSeconds; // Equivalent to Math.floor()
+        },
+        /**
+         * Rest an object
+         * @param {Object} obj An object to be reset.
+         * ref: https://stackoverflow.com/a/24090180
+         */
+        resetObject: function (obj) {
+            for (let key in Object.getOwnPropertyNames(obj)) {
+                if (!obj.hasOwnProperty(key)) continue;
+
+                let val = obj[key];
+                switch (typeof val) {
+                    case 'string':
+                        obj[key] = ''; break;
+                    case 'number':
+                        obj[key] = 0; break;
+                    case 'boolean':
+                        obj[key] = false; break;
+                    case 'object':
+                        if (val === null) break;
+                        if (val instanceof Array) {
+                            while (obj[key].length > 0) {
+                                obj[key].pop();
+                            }
+                            break;
+                        }
+                        val = {};
+                        //Or recursively clear the sub-object
+                        //resetObject(val);
+                        break;
+                }
+            }
         }
     };
 
@@ -232,6 +264,15 @@
             } catch (ex) {
                 return null;
             }
+        }
+
+        dispose() {
+            Utility.resetObject(this.data);
+            delete this.data;
+            this.data = null;
+
+            delete this.dataProvider;
+            this.dataProvider = null;
         }
     }
 
@@ -700,7 +741,7 @@
     }
 
     class BIM360SensorDataGraphPanel extends Autodesk.Viewing.UI.DockingPanel {
-        constructor(viewer, dataProvider) {
+        constructor(viewer, dataHelper) {
             const options = {};
 
             //  Height adjustment for scroll container, offset to height of the title bar and footer by default.
@@ -721,6 +762,9 @@
             this.viewer = viewer;
             this.options = options;
             this.uiCreated = false;
+            this.dataHelper = dataHelper;
+
+            viewer.addPanel(this);
 
             this.addVisibilityListener(async (show) => {
                 if (!show) return;
@@ -733,12 +777,127 @@
         createUI() {
             this.uiCreated = true;
 
-            const div = document.createElement('div');
+            const chartContainer = document.createElement('div');
+            chartContainer.classList.add('chart-container');
+            this.chartContainer = chartContainer;
+            this.scrollContainer.appendChild(chartContainer);
 
-            this.scrollContainer.appendChild(div);
+            this.buildChart();
+        }
+
+        generateChartOptions(dates, values) {
+            const chartOpts = {
+                tooltip: {
+                    //trigger: 'axis',
+                    axisPointer: {
+                        animation: false,
+                        type: 'cross',
+                        lineStyle: {
+                            color: '#376df4',
+                            width: 2,
+                            opacity: 1
+                        }
+                    }
+                },
+                xAxis: {
+                    type: 'category',
+                    data: dates,
+                    axisLine: { lineStyle: { color: '#8392A5' } },
+                    axisLabel: {
+                        formatter: (function (value) {
+                            return new Date(value).toLocaleString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+                        })
+                    }
+                },
+                yAxis: {
+                    scale: true,
+                    axisLine: { lineStyle: { color: '#8392A5' } },
+                    splitLine: { show: false }
+                },
+                grid: {
+                    left: '9%',
+                    right: '6%',
+                    height: '49%',
+                    bottom: 80
+                },
+                dataZoom: [{
+                    textStyle: {
+                        color: '#8392A5'
+                    },
+                    dataBackground: {
+                        areaStyle: {
+                            color: '#8392A5'
+                        },
+                        lineStyle: {
+                            opacity: 0.8,
+                            color: '#8392A5'
+                        }
+                    },
+                    brushSelect: true
+                }, {
+                    type: 'inside'
+                }],
+                series: [
+                    {
+                        //name: 'Record',
+                        type: 'line',
+                        data: values,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: {
+                            width: 1
+                        }
+                    }
+                ]
+            };
+
+            return chartOpts;
+        }
+
+        buildChart() {
+            const chart = echarts.init(this.chartContainer);
+            this.chart = chart;
+
+            const values = [];
+            const dates = [
+                new Date(this.dataHelper.timeRange.min * 1000).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+                new Date(this.dataHelper.timeRange.max * 1000).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+            ];
+
+            const chartOpts = this.generateChartOptions(dates, values);
+            chart.setOption(chartOpts);
+
+            if (this.options.addFooter) {
+                this.footerInstance.resizeCallback = () => {
+                    chart.resize();
+                };
+            }
+        }
+
+        updateChart(sensor) {
+            if (!sensor) return;
+
+            let cachedData = this.dataHelper.getDataFromCache(sensor.id, sensor.type);
+            if (!cachedData) return;
+
+            const assetInfo = this.dataHelper.dataProvider.assetInfoCache[sensor.externalId];
+            let nameString = 'Unknown asset';
+            if (assetInfo) {
+                nameString = `Asset [${assetInfo.assetId}]`;
+            }
+
+            this.setTitle(`${nameString} ${sensor.name}`);
+
+            const dates = cachedData.tsValues.map(ts => new Date(ts * 1000).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
+            const values = cachedData.avg;
+
+            const chartOpts = this.generateChartOptions(dates, values);
+            this.chart.setOption(chartOpts);
         }
 
         uninitialize() {
+            this.viewer.removePanel(this);
+            super.uninitialize();
         }
     }
 
@@ -867,16 +1026,28 @@
 
                 if (!sensor) return;
 
-
+                this.recordHistoryPanel.updateChart(sensor);
             }
         }
 
         async createUI() {
+            const recordHistoryPanel = new BIM360SensorDataGraphPanel(this.viewer, this.dataHelper);
+            this.recordHistoryPanel = recordHistoryPanel;
+
             const tooltip = new BIM360SensorTooltip(this);
             this.tooltip = tooltip;
 
             const heatmapColorGradientBar = new BIM360HeatmapColorGradientBar(this);
             this.heatmapColorGradientBar = heatmapColorGradientBar;
+
+            const recordHistoryToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizRecordHistoryToolButton');
+            recordHistoryToolButton.setToolTip('Show Sensor Record History');
+            recordHistoryToolButton.icon.classList.add('glyphicon');
+            recordHistoryToolButton.icon.classList.add('glyphicon-bim360-icon');
+            recordHistoryToolButton.setIcon('glyphicon-dashboard');
+            recordHistoryToolButton.onClick = () => {
+                recordHistoryPanel.setVisible(!recordHistoryPanel.isVisible());
+            };
 
             const heatmapTimeBackwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeBackwardTool');
             heatmapTimeBackwardToolButton.setToolTip('Backward Heatmap Time');
@@ -955,8 +1126,10 @@
                 });
 
             const addButtons = (subToolbar) => {
+                subToolbar.addControl(recordHistoryToolButton);
                 subToolbar.addControl(heatmapTimeBackwardToolButton);
                 subToolbar.addControl(heatmapTimeForwardToolButton);
+                subToolbar.recordHistoryToolButton = recordHistoryToolButton;
                 subToolbar.heatmapTimeBackwardToolButton = heatmapTimeBackwardToolButton;
                 subToolbar.heatmapTimeForwardToolButton = heatmapTimeForwardToolButton;
             }
@@ -1211,7 +1384,7 @@
 
         clearHeatmap(includeUI = true) {
             this.isHeatMapVisible = false;
-            this.dataVizTool.removeSurfaceShading();
+            this.dataVizTool?.removeSurfaceShading();
 
             if (includeUI)
                 this.heatmapColorGradientBar.hide();
@@ -1258,7 +1431,19 @@
         async unload() {
             this.clearHeatmap();
             this.heatmapColorGradientBar.destroy();
-            this.dataVizTool.removeAllViewables();
+            this.dataVizTool?.removeAllViewables();
+
+            if (this.recordHistoryPanel) {
+                this.recordHistoryPanel.uninitialize();
+                delete this.recordHistoryPanel;
+                this.recordHistoryPanel = null;
+            }
+
+            if (this.dataHelper) {
+                this.dataHelper.dispose();
+                delete this.dataHelper;
+                this.dataHelper = null;
+            }
 
             return true;
         }
