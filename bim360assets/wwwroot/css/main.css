@@ -308,6 +308,163 @@ body {
   letter-spacing: 0.01071em;
 }
 
+.bim360-heatmap-options-select {
+  display: flex;
+  pointer-events: none;
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+
+/** DataViz dropdown menu control **/
+/** ref: https://andrejgajdos.com/custom-select-dropdown **/
+.bim360-dropdown-menu-control {
+  position: relative;
+  user-select: none;
+  width: auto;
+  min-width: 100px;
+  pointer-events: auto;
+}
+
+.bim360-dropdown-menu {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-width: 0 2px 0 2px;
+  border-radius: 5px;
+}
+
+.bim360-dropdown-menu-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  font-size: 1.35rem;
+  font-weight: 400;
+  height: 2.35rem;
+  line-height: 1.35rem;
+  cursor: pointer;
+  border-width: 2px 0 2px 0;
+  border-style: solid;
+  border-color: #394a6d;
+
+  color: white;
+  background: #2D2C2C;
+  border-radius: 5px;
+}
+
+.bim360-dropdown-menu .bim360-dropdown-menu-options {
+  position: absolute;
+  display: block;
+  top: 100%;
+  left: 0;
+  right: 0;
+  border: 2px solid #394a6d;
+  border-top: 0;
+  background: #fff;
+  transition: all 0.5s;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.bim360-dropdown-menu.open .bim360-dropdown-menu-options {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: all;
+}
+
+.bim360-dropdown-menu .bim360-dropdown-menu-option {
+  position: relative;
+  display: block;
+  padding: 0 1rem 0 1rem;
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: #3b3b3b;
+  line-height: 2.35rem;
+  cursor: pointer;
+  transition: all 0.5s;
+}
+
+.bim360-dropdown-menu-option:hover {
+  cursor: pointer;
+  background-color: #b2b2b2;
+}
+
+.bim360-dropdown-menu-option.selected {
+  color: #ffffff;
+  background-color: #305c91;
+}
+
+.bim360-dropdown-menu-trigger .arrow {
+  position: relative;
+  height: 7px;
+  width: 7px;
+  margin-left: 13px;
+}
+
+.bim360-dropdown-menu-trigger .arrow::before,
+.bim360-dropdown-menu-trigger .arrow::after {
+  content: "";
+  position: absolute;
+  bottom: 0px;
+  width: 0.15rem;
+  height: 100%;
+  transition: all 0.5s;
+}
+
+.bim360-dropdown-menu-trigger .arrow::before {
+  left: -2px;
+  transform: rotate(45deg);
+  background-color: white;
+}
+
+.bim360-dropdown-menu-trigger .arrow::after {
+  left: 2px;
+  transform: rotate(-45deg);
+  background-color: white;
+}
+
+.bim360-dropdown-menu.open .arrow::before {
+  left: -2px;
+  transform: rotate(-45deg);
+}
+
+.bim360-dropdown-menu.open .arrow::after {
+  left: 2px;
+  transform: rotate(45deg);
+}
+
+/** DataViz heatmap visibility control **/
+
+.bim360-heatmap-visibility-control {
+  position: relative;
+  user-select: none;
+  width: auto;
+  /* min-width: 100px; */
+  pointer-events: auto;
+  border-width: 0 2px 0 2px;
+  border-radius: 5px;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.bim360-heatmap-visibility-control-body {
+  background-color: #3b3b3b;
+  border: none;
+  color: white;
+  padding: 0.45rem 1.35rem;
+  font-size: 1.35rem;
+  cursor: pointer;
+  border-width: 0 2px 0 2px;
+  border-radius: 5px;
+}
+
+.bim360-heatmap-visibility-control-body:hover .glyphicon {
+  color: white;
+}
+
 /** DataViz sensor data graph panel **/
 .bim360-sensor-data-graph-panel {
   max-width: 315px;

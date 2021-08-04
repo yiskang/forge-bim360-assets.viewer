@@ -93,6 +93,18 @@
 
         getDataRangeOfCache(sensorType) {
             const data = Object.values(this.data).flat().filter(d => d.name.toLowerCase() == sensorType.toLowerCase());
+            if (!data || data.length <= 0) {
+                console.warn(
+                    `Data range for \`${sensorType}\` not specified. Please make sure the database having sensors named with \`${sensorType}\`.`
+                );
+
+                return {
+                    dataUnit: '%',
+                    min: 0,
+                    max: 100
+                }
+            }
+
             const max = Math.max(...data.map(d => d.avgMax));
             const min = Math.min(...data.map(d => d.avgMin));
 
@@ -342,9 +354,232 @@
         }
     }
 
-    class BIM360HeatmapColorGradientBar {
+    const UI_CONTROL_VISIBILITY_CHANGED_EVENT = 'uiControlVisibilityChangedEvent';
+    class BIM360UiControl extends THREE.EventDispatcher {
+        constructor(container) {
+            super();
+
+            this.parentContainer = container;
+            this.initialize();
+        }
+
+        get visible() {
+            return (this.container.style.visibility == 'visible');
+        }
+
+        set visible(visible) {
+            if (visible) {
+                this.container.style.visibility = 'visible';
+            } else {
+                this.container.style.visibility = 'hidden';
+            }
+
+            this.dispatchEvent({
+                type: UI_CONTROL_VISIBILITY_CHANGED_EVENT,
+                visible
+            });
+        }
+
+        initialize() {
+            const container = document.createElement('div');
+            container.classList.add('bim360-ui-control');
+            this.container = container;
+            this.parentContainer.appendChild(container);
+        }
+
+        uninitialize() {
+            if (!this.container) return;
+
+            this.parentContainer.removeChild(this.container);
+        }
+    }
+    BIM360UiControl.UI_CONTROL_VISIBILITY_CHANGED_EVENT = UI_CONTROL_VISIBILITY_CHANGED_EVENT;
+
+    const DROPDOWN_CONTROL_CURRENT_INDEX_CHANGED_EVENT = 'dropdownControlCurrentIndexChangedEvent';
+    class BIM360DropdownMenuControl extends BIM360UiControl {
+        constructor(container, options) {
+            super(container);
+
+            this.options = [].concat(options);
+            this.init();
+        }
+
+        get selectedIndex() {
+            const options = this.container.querySelectorAll('.bim360-dropdown-menu-option');
+            return Array.prototype.findIndex.call(options, opt => opt.classList.contains('selected'));
+        }
+
+        set selectedIndex(index) {
+            if (index == this.selectedIndex) return;
+
+            const option = this.options[index];
+            if (!option)
+                throw new Error(`Invalid select option index: \`${index}\``);
+
+            this.container.querySelector('.bim360-dropdown-menu-option.selected')?.classList.remove('selected');
+
+            const options = this.container.querySelectorAll('.bim360-dropdown-menu-option');
+            const targetDom = Array.prototype.find.call(options, opt => opt.getAttribute('data-value') == option.value);
+
+            targetDom.classList.add('selected');
+            targetDom.closest('.bim360-dropdown-menu').querySelector('.bim360-dropdown-menu-trigger span').textContent = targetDom.textContent;
+
+            this.dispatchEvent({
+                type: DROPDOWN_CONTROL_CURRENT_INDEX_CHANGED_EVENT,
+                index: index,
+                menuOption: option
+            });
+        }
+
+        init() {
+            const container = this.container;
+            container.classList.add('bim360-dropdown-menu-control');
+
+            container.addEventListener('click', function () {
+                this.querySelector('.bim360-dropdown-menu').classList.toggle('open');
+            });
+
+            const menuContainer = document.createElement('div');
+            menuContainer.classList.add('bim360-dropdown-menu');
+            container.appendChild(menuContainer);
+
+            const menuTriggerContainer = document.createElement('div');
+            const menuTriggerTextContainer = document.createElement('span');
+            const menuTriggerArrowContainer = document.createElement('div');
+            menuTriggerContainer.classList.add('bim360-dropdown-menu-trigger');
+            menuTriggerArrowContainer.classList.add('arrow');
+
+            menuTriggerContainer.appendChild(menuTriggerTextContainer);
+            menuTriggerContainer.appendChild(menuTriggerArrowContainer);
+            menuContainer.appendChild(menuTriggerContainer);
+
+            const menuOptionsContainer = document.createElement('div');
+            menuOptionsContainer.classList.add('bim360-dropdown-menu-options');
+            menuContainer.appendChild(menuOptionsContainer);
+
+            for (let i = 0; i < this.options.length; i++) {
+                let option = this.options[i];
+                let menuOptionContainer = document.createElement('span');
+                menuOptionContainer.classList.add('bim360-dropdown-menu-option');
+                menuOptionContainer.textContent = option.text;
+                menuOptionContainer.setAttribute('data-value', option.value);
+                menuOptionsContainer.appendChild(menuOptionContainer);
+
+                menuOptionContainer.addEventListener('click', () => {
+                    this.selectedIndex = i;
+                });
+            }
+
+            // Set default selected option
+            this.selectedIndex = 0;
+        }
+
+        destroy() {
+            if (!this.container) return;
+
+            this.uninitialize();
+        }
+
+        selectByValue(value) {
+            const idx = this.options.findIndex(op => op.value == value);
+            if (idx === -1) return;
+
+            this.selectedIndex = idx;
+        }
+    }
+
+    BIM360DropdownMenuControl.DROPDOWN_CONTROL_CURRENT_INDEX_CHANGED_EVENT = DROPDOWN_CONTROL_CURRENT_INDEX_CHANGED_EVENT;
+
+    class BIM360HeatmapOptionsControl extends BIM360DropdownMenuControl {
+        constructor(container) {
+            const heatmapOptions = Object.keys(HeatmapGradientMap).map(item => {
+                return {
+                    value: item,
+                    text: item.charAt(0).toUpperCase() + item.slice(1)
+                }
+            });
+
+            super(container, heatmapOptions);
+        }
+    }
+
+    const HEATMAP_VISIBILITY_CONTROL_CLICKED_EVENT = 'heatmapVisibilityControlClickedEvent';
+    class BIM360HeatmapVisibilityControl extends BIM360UiControl {
+        constructor(container) {
+            super(container);
+
+            this.onClicked = this.onClicked.bind(this);
+
+            this.init();
+        }
+
+        get active() {
+            return this.container.querySelector('i.glyphicon')?.classList.contains('glyphicon-eye-open');
+        }
+
+        set active(state) {
+            const iconContainer = this.container.querySelector('i.glyphicon');
+
+            if (state) {
+                iconContainer?.classList.remove('glyphicon-eye-close');
+                iconContainer?.classList.add('glyphicon-eye-open');
+            } else {
+                iconContainer?.classList.remove('glyphicon-eye-open');
+                iconContainer?.classList.add('glyphicon-eye-close');
+            }
+        }
+
+        onClicked(event) {
+            this.active = !this.active;
+
+            this.dispatchEvent({
+                type: HEATMAP_VISIBILITY_CONTROL_CLICKED_EVENT,
+                active: this.active
+            });
+
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        init() {
+            const container = this.container;
+            container.classList.add('bim360-heatmap-visibility-control');
+
+            container.addEventListener(
+                'click',
+                this.onClicked
+            );
+
+            const bodyContainer = document.createElement('div');
+            bodyContainer.classList.add('bim360-heatmap-visibility-control-body');
+            container.appendChild(bodyContainer);
+
+            const iconContainer = document.createElement('i');
+            iconContainer.classList.add('glyphicon');
+            iconContainer.classList.add('glyphicon-eye-open');
+            bodyContainer.appendChild(iconContainer);
+        }
+
+        destroy() {
+            if (!this.container) return;
+
+            this.container.removeEventListener(
+                'click',
+                this.onClicked
+            );
+
+            super.uninitialize();
+        }
+    }
+
+    BIM360HeatmapVisibilityControl.HEATMAP_VISIBILITY_CONTROL_CLICKED_EVENT = HEATMAP_VISIBILITY_CONTROL_CLICKED_EVENT;
+
+    class BIM360HeatmapColorGradientBar extends BIM360UiControl {
         constructor(parent) {
+            super(parent.viewer.container);
+
             this.parent = parent;
+            this.init();
         }
 
         get viewer() {
@@ -359,38 +594,26 @@
             return this.parent.currentHeatmapSensorType;
         }
 
-        build() {
-            const gradientStyle = this.generateGradientStyle(HeatmapGradientMap, this.currentType);
-            const labelData = this.generateMarks(this.currentType);
-
-            const container = document.createElement('div');
+        init() {
+            const container = this.container;
             container.classList.add('bim360-heatmap-color-gradient-bar');
-            this.container = container;
 
             const rootSpan = document.createElement('span');
             rootSpan.classList.add('bim360-heatmap-color-gradient-bar-root');
             container.appendChild(rootSpan);
+            this.rootSpan = rootSpan;
 
-            const railSpan = document.createElement('span');
-            railSpan.classList.add('bim360-heatmap-color-gradient-bar-rail');
-            railSpan.style.backgroundImage = gradientStyle;
-            rootSpan.appendChild(railSpan);
+            const heatmapOptionsContainer = document.createElement('div');
+            heatmapOptionsContainer.classList.add('bim360-heatmap-options-select');
+            container.appendChild(heatmapOptionsContainer);
 
-            for (let i = 0; i < labelData.length; i++) {
-                let ld = labelData[i];
-                let markSpan = document.createElement('span');
-                markSpan.classList.add('bim360-heatmap-color-gradient-bar-mark');
-                markSpan.style.left = `${ld.value}%`;
-                rootSpan.appendChild(markSpan);
+            const heatmapOptionsSelect = new BIM360HeatmapOptionsControl(heatmapOptionsContainer);
+            heatmapOptionsSelect.visible = false;
+            this.heatmapOptionsSelect = heatmapOptionsSelect;
 
-                let markLabelSpan = document.createElement('span');
-                markLabelSpan.classList.add('bim360-heatmap-color-gradient-bar-mark-label');
-                markLabelSpan.style.left = `${ld.value}%`;
-                markLabelSpan.innerHTML = ld.label;
-                rootSpan.appendChild(markLabelSpan);
-            }
-
-            this.viewer.container.appendChild(container);
+            const heatmapVisibilityControl = new BIM360HeatmapVisibilityControl(heatmapOptionsContainer);
+            heatmapVisibilityControl.visible = false;
+            this.heatmapVisibilityControl = heatmapVisibilityControl;
         }
 
         generateGradientStyle(gradientMap, type) {
@@ -423,7 +646,56 @@
         destroy() {
             if (!this.container) return;
 
+            this.heatmapOptionsSelect.destroy();
+            this.heatmapVisibilityControl.destroy();
+
             this.viewer.container.removeChild(this.container);
+        }
+
+        show() {
+            this.visible = true;
+
+            const rootSpan = this.rootSpan;
+            const gradientStyle = this.generateGradientStyle(HeatmapGradientMap, this.currentType);
+            const labelData = this.generateMarks(this.currentType);
+
+            const railSpan = document.createElement('span');
+            railSpan.classList.add('bim360-heatmap-color-gradient-bar-rail');
+            railSpan.style.backgroundImage = gradientStyle;
+            rootSpan.appendChild(railSpan);
+
+            for (let i = 0; i < labelData.length; i++) {
+                let ld = labelData[i];
+                let markSpan = document.createElement('span');
+                markSpan.classList.add('bim360-heatmap-color-gradient-bar-mark');
+                markSpan.style.left = `${ld.value}%`;
+                rootSpan.appendChild(markSpan);
+
+                let markLabelSpan = document.createElement('span');
+                markLabelSpan.classList.add('bim360-heatmap-color-gradient-bar-mark-label');
+                markLabelSpan.style.left = `${ld.value}%`;
+                markLabelSpan.innerHTML = ld.label;
+                rootSpan.appendChild(markLabelSpan);
+            }
+
+            this.heatmapOptionsSelect.visible = true;
+            this.heatmapVisibilityControl.visible = true;
+
+            this.heatmapOptionsSelect.selectByValue(this.currentType);
+            this.heatmapVisibilityControl.active = true;
+        }
+
+        hide() {
+            if (!this.rootSpan) return;
+
+            this.heatmapOptionsSelect.visible = false;
+            this.heatmapVisibilityControl.visible = false;
+
+            while (this.rootSpan.firstChild) {
+                this.rootSpan.removeChild(this.rootSpan.lastChild);
+            }
+
+            this.visible = false;
         }
     }
 
@@ -483,8 +755,6 @@
             this.dataHelper = null;
             this.currentTime = null;
             this.isHeatMapVisible = false;
-            this.tooltip = new BIM360SensorTooltip(this);
-            this.heatmapColorGradientBar = new BIM360HeatmapColorGradientBar(this);
 
             this.onSelectedFloorChanged = this.onSelectedFloorChanged.bind(this);
             this.onSensorDataUpdated = this.onSensorDataUpdated.bind(this);
@@ -526,7 +796,6 @@
                     return resolve();
 
                 const onModelRootAdded = (event) => {
-                    console.log(event);
                     resolve();
                 };
 
@@ -552,138 +821,10 @@
             await this.createUI();
         }
 
-        async createUI() {
-            const heatmapVisibilityToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapVisibilityTool');
-            heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
-            heatmapVisibilityToolButton.icon.classList.add('glyphicon');
-            heatmapVisibilityToolButton.icon.classList.add('glyphicon-bim360-icon');
-            heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
-
-            const heatmapTimeBackwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeBackwardTool');
-            heatmapTimeBackwardToolButton.setToolTip('Backward Heatmap Time');
-            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon');
-            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon-bim360-icon');
-            heatmapTimeBackwardToolButton.setIcon('glyphicon-backward');
-            heatmapTimeBackwardToolButton.onClick = () => {
-                if (!this.isHeatMapVisible) return;
-
-                this.currentTime = new Date(this.currentTime.getTime() - (1 * 60 * 60 * 1000));
-                console.log('Move backward 1hr', this.currentTime);
-
-                if (Utility.getTimeInEpochSeconds(this.currentTime) < this.dataHelper.timeRange.min) {
-                    let date = new Date(this.dataHelper.timeRange.min * 1000);
-                    console.warn(`Current time \`${this.currentTime}\` is smaller than time range minimum, so reset it to \`${date}\``);
-
-                    this.currentTime = date;
-                    return;
-                }
-
-                this.onSensorDataUpdated();
-                updateHeatmap();
-            };
-
-            const heatmapTimeForwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeForwardTool');
-            heatmapTimeForwardToolButton.setToolTip('Forward Heatmap Time');
-            heatmapTimeForwardToolButton.icon.classList.add('glyphicon');
-            heatmapTimeForwardToolButton.icon.classList.add('glyphicon-bim360-icon');
-            heatmapTimeForwardToolButton.setIcon('glyphicon-forward');
-            heatmapTimeForwardToolButton.onClick = () => {
-                if (!this.isHeatMapVisible) return;
-
-                this.currentTime = new Date(this.currentTime.getTime() + (1 * 60 * 60 * 1000));
-                console.log('Move forward 1hr', this.currentTime);
-
-                if (Utility.getTimeInEpochSeconds(this.currentTime) > this.dataHelper.timeRange.max) {
-                    let date = new Date(this.dataHelper.timeRange.max * 1000);
-                    console.warn(`Current time \`${this.currentTime}\` is greater than time range maximum, so reset it to \`${date}\``);
-
-                    this.currentTime = date;
-                    return;
-                }
-
-                this.onSensorDataUpdated();
-                updateHeatmap();
-            };
-
-            const onHeatmapToolVisibleChanged = (visible) => {
-                heatmapTimeBackwardToolButton.setVisible(visible);
-                heatmapTimeForwardToolButton.setVisible(visible);
-                if (visible) {
-                    this.heatmapColorGradientBar.build();
-                } else {
-                    this.heatmapColorGradientBar.destroy();
-                }
-            };
-
-            const updateHeatmap = () => {
-                this.clearHeatmap();
-
-                const floor = this.levelSelector.floorData[this.levelSelector.currentFloor];
-                this.renderHeatmapByFloor(floor);
-            };
-
-            heatmapVisibilityToolButton.onClick = () => {
-                if (this.isHeatMapVisible) {
-                    heatmapVisibilityToolButton.setToolTip('Hide Heatmap');
-                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-open');
-
-                    this.clearHeatmap();
-                } else {
-                    heatmapVisibilityToolButton.setToolTip('Show Heatmap');
-                    heatmapVisibilityToolButton.setIcon('glyphicon-eye-close');
-
-                    updateHeatmap();
-                }
-
-                heatmapTimeBackwardToolButton.setVisible(this.isHeatMapVisible);
-                heatmapTimeForwardToolButton.setVisible(this.isHeatMapVisible);
-            };
-
-            heatmapVisibilityToolButton.addEventListener(
-                Autodesk.Viewing.UI.Button.Event.VISIBILITY_CHANGED,
-                (event) => onHeatmapToolVisibleChanged(event.isVisible)
-            );
-
-            heatmapVisibilityToolButton.setVisible(false);
-
-            const addButtons = (subToolbar) => {
-                subToolbar.addControl(heatmapVisibilityToolButton);
-                subToolbar.addControl(heatmapTimeBackwardToolButton);
-                subToolbar.addControl(heatmapTimeForwardToolButton);
-                subToolbar.heatmapVisibilityToolButton = heatmapVisibilityToolButton;
-                subToolbar.heatmapTimeBackwardToolButton = heatmapTimeBackwardToolButton;
-                subToolbar.heatmapTimeForwardToolButton = heatmapTimeForwardToolButton;
-            }
-
-            const onSubToolbarCreated = (event) => {
-                if (event.control._id != 'toolbar-bim360-tools') return;
-
-                this.viewer.toolbar.removeEventListener(
-                    Autodesk.Viewing.UI.ControlGroup.Event.CONTROL_ADDED,
-                    onSubToolbarCreated
-                );
-
-                addButtons(event.control);
-            };
-
-            let subToolbar = this.assetTool.subToolbar;
-            if (!subToolbar) {
-                this.viewer.toolbar.addEventListener(
-                    Autodesk.Viewing.UI.ControlGroup.Event.CONTROL_ADDED,
-                    onSubToolbarCreated
-                );
-            } else {
-                addButtons(subToolbar);
-            }
-        }
-
         onSelectedFloorChanged(event) {
             const { levelIndex } = event;
 
             this.clearHeatmap();
-
-            const heatmapVisibilityToolButton = this.assetTool.subToolbar.heatmapVisibilityToolButton;
-            heatmapVisibilityToolButton.setVisible(false);
 
             if (levelIndex === undefined) {
                 return;
@@ -691,7 +832,6 @@
 
             const floor = this.levelSelector.floorData[levelIndex];
             this.renderHeatmapByFloor(floor);
-            heatmapVisibilityToolButton.setVisible(true);
         }
 
         onSensorDataUpdated() {
@@ -717,6 +857,130 @@
 
         onSensorClicked(event) {
             console.log(event);
+            if (event.clickInfo && this.dbId2DeviceIdMap) {
+                const deviceId = this.dbId2DeviceIdMap[event.dbId];
+
+                const { sensors } = this.dataProvider;
+                if (!sensors || sensors.length <= 0) return;
+
+                const sensor = sensors.find(s => s.externalId == deviceId);
+
+                if (!sensor) return;
+
+
+            }
+        }
+
+        async createUI() {
+            const tooltip = new BIM360SensorTooltip(this);
+            this.tooltip = tooltip;
+
+            const heatmapColorGradientBar = new BIM360HeatmapColorGradientBar(this);
+            this.heatmapColorGradientBar = heatmapColorGradientBar;
+
+            const heatmapTimeBackwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeBackwardTool');
+            heatmapTimeBackwardToolButton.setToolTip('Backward Heatmap Time');
+            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon');
+            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon-bim360-icon');
+            heatmapTimeBackwardToolButton.setIcon('glyphicon-backward');
+            heatmapTimeBackwardToolButton.setVisible(false);
+            heatmapTimeBackwardToolButton.onClick = () => {
+                if (!this.isHeatMapVisible) return;
+
+                this.currentTime = new Date(this.currentTime.getTime() - (1 * 60 * 60 * 1000));
+                console.log('Move backward 1hr', this.currentTime);
+
+                if (Utility.getTimeInEpochSeconds(this.currentTime) < this.dataHelper.timeRange.min) {
+                    let date = new Date(this.dataHelper.timeRange.min * 1000);
+                    console.warn(`Current time \`${this.currentTime}\` is smaller than time range minimum, so reset it to \`${date}\``);
+
+                    this.currentTime = date;
+                    return;
+                }
+
+                this.onSensorDataUpdated();
+                this.updateHeatmap(false);
+            };
+
+            const heatmapTimeForwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeForwardTool');
+            heatmapTimeForwardToolButton.setToolTip('Forward Heatmap Time');
+            heatmapTimeForwardToolButton.icon.classList.add('glyphicon');
+            heatmapTimeForwardToolButton.icon.classList.add('glyphicon-bim360-icon');
+            heatmapTimeForwardToolButton.setIcon('glyphicon-forward');
+            heatmapTimeForwardToolButton.setVisible(false);
+            heatmapTimeForwardToolButton.onClick = () => {
+                if (!this.isHeatMapVisible) return;
+
+                this.currentTime = new Date(this.currentTime.getTime() + (1 * 60 * 60 * 1000));
+                console.log('Move forward 1hr', this.currentTime);
+
+                if (Utility.getTimeInEpochSeconds(this.currentTime) > this.dataHelper.timeRange.max) {
+                    let date = new Date(this.dataHelper.timeRange.max * 1000);
+                    console.warn(`Current time \`${this.currentTime}\` is greater than time range maximum, so reset it to \`${date}\``);
+
+                    this.currentTime = date;
+                    return;
+                }
+
+                this.onSensorDataUpdated();
+                this.updateHeatmap(false);
+            };
+
+            heatmapColorGradientBar.heatmapOptionsSelect.addEventListener(
+                BIM360DropdownMenuControl.DROPDOWN_CONTROL_CURRENT_INDEX_CHANGED_EVENT,
+                (event) => {
+                    if (!event.menuOption) return;
+
+                    this.changeHeatmapByType(event.menuOption.value);
+                });
+
+            heatmapColorGradientBar.heatmapVisibilityControl.addEventListener(
+                BIM360HeatmapVisibilityControl.HEATMAP_VISIBILITY_CONTROL_CLICKED_EVENT,
+                (event) => {
+                    if (event.active) {
+                        this.updateHeatmap(false);
+                    } else {
+                        this.clearHeatmap(false);
+                    }
+
+                    heatmapTimeBackwardToolButton.setVisible(event.active);
+                    heatmapTimeForwardToolButton.setVisible(event.active);
+                });
+
+            heatmapColorGradientBar.addEventListener(
+                BIM360UiControl.UI_CONTROL_VISIBILITY_CHANGED_EVENT,
+                (event) => {
+                    heatmapTimeBackwardToolButton.setVisible(event.visible);
+                    heatmapTimeForwardToolButton.setVisible(event.visible);
+                });
+
+            const addButtons = (subToolbar) => {
+                subToolbar.addControl(heatmapTimeBackwardToolButton);
+                subToolbar.addControl(heatmapTimeForwardToolButton);
+                subToolbar.heatmapTimeBackwardToolButton = heatmapTimeBackwardToolButton;
+                subToolbar.heatmapTimeForwardToolButton = heatmapTimeForwardToolButton;
+            }
+
+            const onSubToolbarCreated = (event) => {
+                if (event.control._id != 'toolbar-bim360-tools') return;
+
+                this.viewer.toolbar.removeEventListener(
+                    Autodesk.Viewing.UI.ControlGroup.Event.CONTROL_ADDED,
+                    onSubToolbarCreated
+                );
+
+                addButtons(event.control);
+            };
+
+            let subToolbar = this.assetTool.subToolbar;
+            if (!subToolbar) {
+                this.viewer.toolbar.addEventListener(
+                    Autodesk.Viewing.UI.ControlGroup.Event.CONTROL_ADDED,
+                    onSubToolbarCreated
+                );
+            } else {
+                addButtons(subToolbar);
+            }
         }
 
         /**
@@ -933,9 +1197,24 @@
             }
         }
 
-        clearHeatmap() {
+        updateHeatmap(includeUI = true) {
+            this.clearHeatmap(includeUI);
+
+            const floor = this.levelSelector.floorData[this.levelSelector.currentFloor];
+            this.renderHeatmapByFloor(floor);
+        }
+
+        changeHeatmapByType(sensorType) {
+            this.currentHeatmapSensorType = sensorType;
+            this.updateHeatmap();
+        }
+
+        clearHeatmap(includeUI = true) {
             this.isHeatMapVisible = false;
             this.dataVizTool.removeSurfaceShading();
+
+            if (includeUI)
+                this.heatmapColorGradientBar.hide();
         }
 
         async renderHeatmapByFloor(floor) {
@@ -971,10 +1250,14 @@
             supportedTypes.forEach(type => this.dataVizTool.registerSurfaceShadingColors(type, HeatmapGradientMap[type]));
 
             this.dataVizTool.renderSurfaceShading(floor.name, this.currentHeatmapSensorType, this.getSensorValue);
+
+            if (!this.heatmapColorGradientBar.visible)
+                this.heatmapColorGradientBar.show();
         }
 
         async unload() {
             this.clearHeatmap();
+            this.heatmapColorGradientBar.destroy();
             this.dataVizTool.removeAllViewables();
 
             return true;
