@@ -1662,11 +1662,15 @@
         setLevelFilterByName(name, focus) {
             this.viewer.setCutPlanes();
 
+            if (this.currentFilter) {
+                this.prevFilter = Object.assign({}, this.currentFilter);
+            }
+
             const level = this.findLevelByName(name);
             if (level) {
                 this.isFilterApplied = true;
                 this.levelSelector.selectFloor(level.index, false);
-                this.prevFilter = {
+                this.currentFilter = {
                     level: name,
                     space: null
                 };
@@ -1676,6 +1680,7 @@
                     this.selectTreeNode(levelLocation.id, focus);
                 }
             } else {
+                delete this.currentFilter;
                 this.isFilterApplied = false;
                 this.levelSelector.selectFloor();
 
@@ -1909,8 +1914,13 @@
             let result = false;
             this.levelSelector.selectFloor();
 
+            if (this.currentFilter) {
+                this.prevFilter = Object.assign({}, this.currentFilter);
+            }
+
             const levelInfo = this.findLevelByName(level);
             if (!name || !levelInfo) {
+                delete this.currentFilter;
                 this.isFilterApplied = false;
                 this.viewer.setCutPlanes();
                 if (this.uiCreated) {
@@ -1941,7 +1951,7 @@
             this.runLevelSelectorFilter(levelInfo);
 
             result = true;
-            this.prevFilter = {
+            this.currentFilter = {
                 level,
                 space: name
             };
@@ -1979,14 +1989,34 @@
                 return;
             }
 
+            let bkpCurrentFilter = null;
+            if (this.currentFilter)
+                bkpCurrentFilter = Object.assign({}, this.currentFilter);
+
+            console.log(this.prevFilter, this.currentFilter);
             const { space, level } = this.prevFilter;
 
             if (space) {
+                if (bkpCurrentFilter)
+                    this.setLevelFilterByName();
+
                 await this.setRoomFilterByNameAndLevel(space, level);
             } else {
                 //this.viewer.setCutPlanes();
+                if (bkpCurrentFilter)
+                    await this.setRoomFilterByNameAndLevel();
+
                 this.setLevelFilterByName(level);
             }
+
+            if (bkpCurrentFilter) {
+                this.prevFilter = Object.assign({}, bkpCurrentFilter);
+            } else {
+                delete this.prevFilter;
+            }
+
+
+            console.log(this.prevFilter, this.currentFilter);
         }
 
         clearFilter() {
