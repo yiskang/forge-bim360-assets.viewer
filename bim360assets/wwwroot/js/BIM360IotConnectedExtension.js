@@ -431,6 +431,9 @@
         uninitialize() {
             if (!this.container) return;
 
+            Utility.resetObject(this._listeners);
+            delete this._listeners;
+
             this.parentContainer.removeChild(this.container);
         }
     }
@@ -442,6 +445,7 @@
             super(container);
 
             this.options = [].concat(options);
+            this.onBlur = this.onBlur.bind(this);
             this.init();
         }
 
@@ -470,6 +474,13 @@
                 index: index,
                 menuOption: option
             });
+        }
+
+        onBlur(event) {
+            const menu = this.container.querySelector('.bim360-dropdown-menu');
+            if (!menu.contains(event.target)) {
+                menu.classList.remove('open');
+            }
         }
 
         init() {
@@ -511,12 +522,29 @@
                 });
             }
 
+            window.addEventListener(
+                'click',
+                this.onBlur
+            );
+
             // Set default selected option
             this.selectedIndex = 0;
         }
 
         destroy() {
             if (!this.container) return;
+
+            window.removeEventListener(
+                'click',
+                this.onBlur
+            );
+
+            while (this.options.length > 0) {
+                this.options.pop();
+            }
+
+            delete this.options;
+            this.options = null;
 
             this.uninitialize();
         }
@@ -690,6 +718,9 @@
             this.heatmapOptionsSelect.destroy();
             this.heatmapVisibilityControl.destroy();
 
+            delete this.heatmapOptionsSelect;
+            delete this.heatmapVisibilityControl;
+
             this.viewer.container.removeChild(this.container);
         }
 
@@ -753,7 +784,7 @@
 
             //options.addFooter = false;
 
-            super(viewer.container, viewer.container.id + 'BIM360SensorDataGraphPanel', 'Sensor Data History', options);
+            super(viewer.container, viewer.container.id + 'BIM360SensorDataGraphPanel', 'Sensor Data History (Unknown asset)', options);
 
             this.container.classList.add('bim360-docking-panel');
             this.container.classList.add('bim360-sensor-data-graph-panel');
@@ -763,6 +794,7 @@
             this.options = options;
             this.uiCreated = false;
             this.dataHelper = dataHelper;
+            this.chart = null;
 
             viewer.addPanel(this);
 
@@ -896,6 +928,13 @@
         }
 
         uninitialize() {
+            this.uiCreated = false;
+            if (this.chart) {
+                this.chart.dispose();
+                delete this.chart;
+                this.chart = null;
+            }
+
             this.viewer.removePanel(this);
             super.uninitialize();
         }
@@ -909,11 +948,12 @@
             this.dbId2DeviceIdMap = {};
             this.deviceId2DbIdMap = {};
             this.modelExternalIdMaps = {};
-            this.styleMap = [];
+            this.styleMap = {};
             this.currentHeatmapSensorType = 'temperature';
             this.dataHelper = null;
             this.currentTime = null;
             this.isHeatMapVisible = false;
+            this.uiCreated = false;
 
             this.onSelectedFloorChanged = this.onSelectedFloorChanged.bind(this);
             this.onSensorDataUpdated = this.onSensorDataUpdated.bind(this);
@@ -951,7 +991,7 @@
 
         waitForRoomModelRootAdded() {
             return new Promise((resolve, reject) => {
-                if (this.assetTool?.roomModel)
+                if (this.spaceFilterTool?.roomModel)
                     return resolve();
 
                 const onModelRootAdded = (event) => {
@@ -969,9 +1009,17 @@
         async load() {
             //await viewer.waitForLoadDone();
             await this.waitForRoomModelRootAdded();
-
             await this.init();
+
+            if (this.viewer.toolbar) {
+                // Toolbar is already available, create the UI
+                await this.createUI();
+            }
+
             await this.render();
+            if (this.spaceFilterTool.isFilterApplied) {
+                this.updateHeatmap();
+            }
 
             return true;
         }
@@ -1005,7 +1053,6 @@
                 if (!sensors || sensors.length <= 0) return;
 
                 const sensor = sensors.find(s => s.externalId == deviceId);
-
                 if (!sensor) return;
 
                 this.tooltip.show(sensor);
@@ -1015,7 +1062,6 @@
         }
 
         onSensorClicked(event) {
-            console.log(event);
             if (event.clickInfo && this.dbId2DeviceIdMap) {
                 const deviceId = this.dbId2DeviceIdMap[event.dbId];
 
@@ -1031,6 +1077,10 @@
         }
 
         async createUI() {
+            if (this.uiCreated) return;
+
+            this.uiCreated = true;
+
             const recordHistoryPanel = new BIM360SensorDataGraphPanel(this.viewer, this.dataHelper);
             this.recordHistoryPanel = recordHistoryPanel;
 
@@ -1048,6 +1098,13 @@
             recordHistoryToolButton.onClick = () => {
                 recordHistoryPanel.setVisible(!recordHistoryPanel.isVisible());
             };
+
+            recordHistoryPanel.addVisibilityListener(function (visible) {
+                if (visible)
+                    viewer.onPanelVisible(recordHistoryPanel, viewer);
+
+                recordHistoryToolButton.setState(visible ? Autodesk.Viewing.UI.Button.State.ACTIVE : Autodesk.Viewing.UI.Button.State.INACTIVE);
+            });
 
             const heatmapTimeBackwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeBackwardTool');
             heatmapTimeBackwardToolButton.setToolTip('Backward Heatmap Time');
@@ -1373,7 +1430,13 @@
         updateHeatmap(includeUI = true) {
             this.clearHeatmap(includeUI);
 
+            const { currentFloor } = this.levelSelector;
+            if (currentFloor === undefined || currentFloor === null) {
+                return;
+            }
+
             const floor = this.levelSelector.floorData[this.levelSelector.currentFloor];
+
             this.renderHeatmapByFloor(floor);
         }
 
@@ -1433,10 +1496,28 @@
             this.heatmapColorGradientBar.destroy();
             this.dataVizTool?.removeAllViewables();
 
+            if (this.levelSelector) {
+                this.levelSelector.removeEventListener(
+                    Autodesk.AEC.FloorSelector.SELECTED_FLOOR_CHANGED,
+                    this.onSelectedFloorChanged
+                );
+            }
+
             if (this.recordHistoryPanel) {
                 this.recordHistoryPanel.uninitialize();
                 delete this.recordHistoryPanel;
                 this.recordHistoryPanel = null;
+            }
+
+            if (this.assetTool && this.assetTool.subToolbar) {
+                let { subToolbar } = this.assetTool;
+                subToolbar.removeControl(subToolbar.recordHistoryToolButton);
+                subToolbar.removeControl(subToolbar.heatmapTimeBackwardToolButton);
+                subToolbar.removeControl(subToolbar.heatmapTimeForwardToolButton);
+
+                delete subToolbar.recordHistoryToolButton;
+                delete subToolbar.heatmapTimeBackwardToolButton;
+                delete subToolbar.heatmapTimeForwardToolButton;
             }
 
             if (this.dataHelper) {
@@ -1444,6 +1525,21 @@
                 delete this.dataHelper;
                 this.dataHelper = null;
             }
+
+            Utility.resetObject(this.dbId2DeviceIdMap);
+            Utility.resetObject(this.deviceId2DbIdMap);
+            Utility.resetObject(this.modelExternalIdMaps);
+            Utility.resetObject(this.styleMap);
+            this.dbId2DeviceIdMap = {};
+            this.deviceId2DbIdMap = {};
+            this.modelExternalIdMaps = {};
+            this.styleMap = {};
+
+            this.sensorDbId = 1;
+            this.currentHeatmapSensorType = 'temperature';
+            this.currentTime = null;
+            this.isHeatMapVisible = false;
+            this.uiCreated = false;
 
             return true;
         }
