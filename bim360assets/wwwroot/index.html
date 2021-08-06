@@ -18,6 +18,10 @@
   <!-- Autodesk Forge Viewer files -->
   <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css" type="text/css">
   <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+  <!-- Autodesk Data Visualization Component files -->
+  <link rel="stylesheet" href="https://yiskang.github.io/forge-dataviz-iot-react-components-es5/dist/timeslider.css" type="text/css">
+  <script src="https://yiskang.github.io/forge-dataviz-iot-react-components-es5/dist/vendor.js"></script>
+  <script src="https://yiskang.github.io/forge-dataviz-iot-react-components-es5/dist/timeslider.js"></script>
   <!-- this project files -->
   <link href="css/main.css" rel="stylesheet" />
   <script src="js/ForgeTree.js"></script>
@@ -71,7 +75,9 @@
         </div>
       </div>
       <div class="col-sm-10 fill">
-        <div id="forgeViewer"></div>
+        <div id="bim360-viewport">
+          <div id="forgeViewer"></div>
+        </div>
       </div>
     </div>
   </div>

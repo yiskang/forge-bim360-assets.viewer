@@ -907,7 +907,7 @@
         }
 
         updateChart(sensor) {
-            if (!sensor) return;
+            if (!sensor || !this.chart) return;
 
             let cachedData = this.dataHelper.getDataFromCache(sensor.id, sensor.type);
             if (!cachedData) return;
@@ -937,6 +937,119 @@
 
             this.viewer.removePanel(this);
             super.uninitialize();
+        }
+    }
+
+    class BIM360TimelinerControl extends BIM360UiControl {
+        constructor(parent) {
+            super(parent.viewer.container.parentNode);
+
+            this.parent = parent;
+            this.instance = null;
+
+            this.init();
+
+            this.onTimeSliderControlInitialized = this.onTimeSliderControlInitialized.bind(this);
+            this.onTimeSliderControlTimeRangeUpdated = this.onTimeSliderControlTimeRangeUpdated.bind(this);
+            this.onTimeSliderControlCurrentTimeUpdated = this.onTimeSliderControlCurrentTimeUpdated.bind(this);
+        }
+
+        get viewer() {
+            return this.parent.viewer;
+        }
+
+        onTimeSliderControlInitialized(event) {
+            console.log(event);
+        }
+
+        onTimeSliderControlTimeRangeUpdated(event) {
+            console.log(event);
+        }
+
+        onTimeSliderControlCurrentTimeUpdated(event) {
+            console.log(event);
+            if (!this.parent.isHeatMapVisible) return;
+
+            this.parent.currentTime = new Date(event.currentTime.getTime());
+            console.log('Current time: ', this.currentTime);
+
+            this.parent.onSensorDataUpdated();
+            this.parent.updateHeatmap(false, false);
+        }
+
+        init() {
+            const container = this.container;
+            container.classList.add('bim360-timeline-control');
+
+            const instanceContainer = document.createElement('div');
+            instanceContainer.classList.add('bim360-timeline');
+            container.appendChild(instanceContainer);
+            this.instanceContainer = instanceContainer;
+
+            this.viewer.container.classList.add('with-timeline');
+            this.viewer.resize();
+        }
+
+        build() {
+            if (!this.instanceContainer) return;
+
+            const timeRange = this.parent.dataHelper.timeRange;
+            let dataStart = new Date(timeRange.min * 1000);
+            let dataEnd = new Date(timeRange.max * 1000)
+            let currentTime = new Date(this.parent.currentTime.getTime());
+
+            const timeOptions = new Autodesk.DataVisualization.UI.TimeOptions(dataStart, dataEnd, currentTime);
+            const timeSliderOptions = {
+                dataStart,
+                dataEnd,
+                timeOptions,
+                // handleTimeRangeUpdated: (startTime, endTime, currentTime) => console.log(startTime, endTime, currentTime),
+                // handleCurrentTimeUpdated: (currentTime) => console.log(currentTime)
+            };
+
+            const timeSlider = new Autodesk.DataVisualization.UI.ChronosTimeSliderControl(this.instanceContainer, timeSliderOptions);
+            this.instance = timeSlider;
+
+            timeSlider.addEventListener(
+                Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_INITIALIZED_EVENT,
+                this.onTimeSliderControlInitialized
+            );
+
+            timeSlider.addEventListener(
+                Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_TIME_RANGE_UPDATED_EVENT,
+                this.onTimeSliderControlTimeRangeUpdated
+            );
+
+            timeSlider.addEventListener(
+                Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_CURRENT_TIME_UPDATED_EVENT,
+                this.onTimeSliderControlCurrentTimeUpdated
+            );
+
+            timeSlider.initialize();
+        }
+
+        destroy() {
+            if (!this.instance) return;
+
+            this.initialize.uninitialize();
+
+            timeSlider.removeEventListener(
+                Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_INITIALIZED_EVENT,
+                this.onTimeSliderControlInitialized
+            );
+
+            timeSlider.removeEventListener(
+                Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_TIME_RANGE_UPDATED_EVENT,
+                this.onTimeSliderControlTimeRangeUpdated
+            );
+
+            timeSlider.removeEventListener(
+                Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_CURRENT_TIME_UPDATED_EVENT,
+                this.onTimeSliderControlCurrentTimeUpdated
+            );
+
+            this.viewer.container.classList.remove('with-timeline');
+            this.viewer.resize();
         }
     }
 
@@ -1018,7 +1131,7 @@
 
             await this.render();
             if (this.spaceFilterTool.isFilterApplied) {
-                this.updateHeatmap();
+                this.updateHeatmap(true, true);
             }
 
             return true;
@@ -1090,6 +1203,10 @@
             const heatmapColorGradientBar = new BIM360HeatmapColorGradientBar(this);
             this.heatmapColorGradientBar = heatmapColorGradientBar;
 
+            const timeSliderControl = new BIM360TimelinerControl(this);
+            this.timeSliderControl = timeSliderControl;
+            timeSliderControl.build();
+
             const recordHistoryToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizRecordHistoryToolButton');
             recordHistoryToolButton.setToolTip('Show Sensor Record History');
             recordHistoryToolButton.icon.classList.add('glyphicon');
@@ -1106,53 +1223,53 @@
                 recordHistoryToolButton.setState(visible ? Autodesk.Viewing.UI.Button.State.ACTIVE : Autodesk.Viewing.UI.Button.State.INACTIVE);
             });
 
-            const heatmapTimeBackwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeBackwardTool');
-            heatmapTimeBackwardToolButton.setToolTip('Backward Heatmap Time');
-            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon');
-            heatmapTimeBackwardToolButton.icon.classList.add('glyphicon-bim360-icon');
-            heatmapTimeBackwardToolButton.setIcon('glyphicon-backward');
-            heatmapTimeBackwardToolButton.setVisible(false);
-            heatmapTimeBackwardToolButton.onClick = () => {
-                if (!this.isHeatMapVisible) return;
+            // const heatmapTimeBackwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeBackwardTool');
+            // heatmapTimeBackwardToolButton.setToolTip('Backward Heatmap Time');
+            // heatmapTimeBackwardToolButton.icon.classList.add('glyphicon');
+            // heatmapTimeBackwardToolButton.icon.classList.add('glyphicon-bim360-icon');
+            // heatmapTimeBackwardToolButton.setIcon('glyphicon-backward');
+            // heatmapTimeBackwardToolButton.setVisible(false);
+            // heatmapTimeBackwardToolButton.onClick = () => {
+            //     if (!this.isHeatMapVisible) return;
 
-                this.currentTime = new Date(this.currentTime.getTime() - (1 * 60 * 60 * 1000));
-                console.log('Move backward 1hr', this.currentTime);
+            //     this.currentTime = new Date(this.currentTime.getTime() - (1 * 60 * 60 * 1000));
+            //     console.log('Move backward 1hr', this.currentTime);
 
-                if (Utility.getTimeInEpochSeconds(this.currentTime) < this.dataHelper.timeRange.min) {
-                    let date = new Date(this.dataHelper.timeRange.min * 1000);
-                    console.warn(`Current time \`${this.currentTime}\` is smaller than time range minimum, so reset it to \`${date}\``);
+            //     if (Utility.getTimeInEpochSeconds(this.currentTime) < this.dataHelper.timeRange.min) {
+            //         let date = new Date(this.dataHelper.timeRange.min * 1000);
+            //         console.warn(`Current time \`${this.currentTime}\` is smaller than time range minimum, so reset it to \`${date}\``);
 
-                    this.currentTime = date;
-                    return;
-                }
+            //         this.currentTime = date;
+            //         return;
+            //     }
 
-                this.onSensorDataUpdated();
-                this.updateHeatmap(false);
-            };
+            //     this.onSensorDataUpdated();
+            //     this.updateHeatmap(false, false);
+            // };
 
-            const heatmapTimeForwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeForwardTool');
-            heatmapTimeForwardToolButton.setToolTip('Forward Heatmap Time');
-            heatmapTimeForwardToolButton.icon.classList.add('glyphicon');
-            heatmapTimeForwardToolButton.icon.classList.add('glyphicon-bim360-icon');
-            heatmapTimeForwardToolButton.setIcon('glyphicon-forward');
-            heatmapTimeForwardToolButton.setVisible(false);
-            heatmapTimeForwardToolButton.onClick = () => {
-                if (!this.isHeatMapVisible) return;
+            // const heatmapTimeForwardToolButton = new Autodesk.Viewing.UI.Button('toolbar-dataVizHeatmapTimeForwardTool');
+            // heatmapTimeForwardToolButton.setToolTip('Forward Heatmap Time');
+            // heatmapTimeForwardToolButton.icon.classList.add('glyphicon');
+            // heatmapTimeForwardToolButton.icon.classList.add('glyphicon-bim360-icon');
+            // heatmapTimeForwardToolButton.setIcon('glyphicon-forward');
+            // heatmapTimeForwardToolButton.setVisible(false);
+            // heatmapTimeForwardToolButton.onClick = () => {
+            //     if (!this.isHeatMapVisible) return;
 
-                this.currentTime = new Date(this.currentTime.getTime() + (1 * 60 * 60 * 1000));
-                console.log('Move forward 1hr', this.currentTime);
+            //     this.currentTime = new Date(this.currentTime.getTime() + (1 * 60 * 60 * 1000));
+            //     console.log('Move forward 1hr', this.currentTime);
 
-                if (Utility.getTimeInEpochSeconds(this.currentTime) > this.dataHelper.timeRange.max) {
-                    let date = new Date(this.dataHelper.timeRange.max * 1000);
-                    console.warn(`Current time \`${this.currentTime}\` is greater than time range maximum, so reset it to \`${date}\``);
+            //     if (Utility.getTimeInEpochSeconds(this.currentTime) > this.dataHelper.timeRange.max) {
+            //         let date = new Date(this.dataHelper.timeRange.max * 1000);
+            //         console.warn(`Current time \`${this.currentTime}\` is greater than time range maximum, so reset it to \`${date}\``);
 
-                    this.currentTime = date;
-                    return;
-                }
+            //         this.currentTime = date;
+            //         return;
+            //     }
 
-                this.onSensorDataUpdated();
-                this.updateHeatmap(false);
-            };
+            //     this.onSensorDataUpdated();
+            //     this.updateHeatmap(false, false);
+            // };
 
             heatmapColorGradientBar.heatmapOptionsSelect.addEventListener(
                 BIM360DropdownMenuControl.DROPDOWN_CONTROL_CURRENT_INDEX_CHANGED_EVENT,
@@ -1166,29 +1283,29 @@
                 BIM360HeatmapVisibilityControl.HEATMAP_VISIBILITY_CONTROL_CLICKED_EVENT,
                 (event) => {
                     if (event.active) {
-                        this.updateHeatmap(false);
+                        this.updateHeatmap(false, true);
                     } else {
-                        this.clearHeatmap(false);
+                        this.clearHeatmap(false, true);
                     }
 
-                    heatmapTimeBackwardToolButton.setVisible(event.active);
-                    heatmapTimeForwardToolButton.setVisible(event.active);
+                    // heatmapTimeBackwardToolButton.setVisible(event.active);
+                    // heatmapTimeForwardToolButton.setVisible(event.active);
                 });
 
             heatmapColorGradientBar.addEventListener(
                 BIM360UiControl.UI_CONTROL_VISIBILITY_CHANGED_EVENT,
                 (event) => {
-                    heatmapTimeBackwardToolButton.setVisible(event.visible);
-                    heatmapTimeForwardToolButton.setVisible(event.visible);
+                    // heatmapTimeBackwardToolButton.setVisible(event.visible);
+                    // heatmapTimeForwardToolButton.setVisible(event.visible);
                 });
 
             const addButtons = (subToolbar) => {
                 subToolbar.addControl(recordHistoryToolButton);
-                subToolbar.addControl(heatmapTimeBackwardToolButton);
-                subToolbar.addControl(heatmapTimeForwardToolButton);
+                // subToolbar.addControl(heatmapTimeBackwardToolButton);
+                // subToolbar.addControl(heatmapTimeForwardToolButton);
                 subToolbar.recordHistoryToolButton = recordHistoryToolButton;
-                subToolbar.heatmapTimeBackwardToolButton = heatmapTimeBackwardToolButton;
-                subToolbar.heatmapTimeForwardToolButton = heatmapTimeForwardToolButton;
+                // subToolbar.heatmapTimeBackwardToolButton = heatmapTimeBackwardToolButton;
+                // subToolbar.heatmapTimeForwardToolButton = heatmapTimeForwardToolButton;
             }
 
             const onSubToolbarCreated = (event) => {
@@ -1427,7 +1544,7 @@
             }
         }
 
-        updateHeatmap(includeUI = true) {
+        updateHeatmap(includeUI, isLevelDirty = true) {
             this.clearHeatmap(includeUI);
 
             const { currentFloor } = this.levelSelector;
@@ -1435,14 +1552,13 @@
                 return;
             }
 
-            const floor = this.levelSelector.floorData[this.levelSelector.currentFloor];
-
-            this.renderHeatmapByFloor(floor);
+            const floor = this.levelSelector.floorData[currentFloor];
+            this.renderHeatmapByFloor(floor, isLevelDirty);
         }
 
         changeHeatmapByType(sensorType) {
             this.currentHeatmapSensorType = sensorType;
-            this.updateHeatmap();
+            this.updateHeatmap(true, true);
         }
 
         clearHeatmap(includeUI = true) {
@@ -1453,37 +1569,39 @@
                 this.heatmapColorGradientBar.hide();
         }
 
-        async renderHeatmapByFloor(floor) {
+        async renderHeatmapByFloor(floor, isLevelDirty = true) {
             const { sensors } = this.dataProvider;
-            if (!floor || !sensors || sensors.length <= 0) return;
+            if (!sensors || sensors.length <= 0) return;
 
             this.isHeatMapVisible = true;
 
-            const data = [];
-            for (let i = 0; i < sensors.length; i++) {
-                const sensor = sensors[i];
-                const position = sensor.position;
-                if (floor.zMin > position.z || floor.zMax < position.z)
-                    continue;
+            if (isLevelDirty) {
+                const data = [];
+                for (let i = 0; i < sensors.length; i++) {
+                    const sensor = sensors[i];
+                    const position = sensor.position;
+                    if (floor.zMin > position.z || floor.zMax < position.z)
+                        continue;
 
-                data.push({
-                    id: sensor.id,
-                    position: sensor.position,
-                    type: sensor.type,
-                    sensorTypes: [sensor.type]
-                });
+                    data.push({
+                        id: sensor.id,
+                        position: sensor.position,
+                        type: sensor.type,
+                        sensorTypes: [sensor.type]
+                    });
+                }
+
+                // Generate surfaceshading data by mapping devices to rooms.
+                const model = this.spaceFilterTool.roomModel;
+                const structureInfo = new Autodesk.DataVisualization.Core.ModelStructureInfo(model);
+                const heatmapData = await structureInfo.generateSurfaceShadingData(data);
+
+                // Setup surfaceshading
+                await this.dataVizTool.setupSurfaceShading(model, heatmapData);
+
+                const supportedTypes = Array.from(new Set(data.map(d => d.type)));
+                supportedTypes.forEach(type => this.dataVizTool.registerSurfaceShadingColors(type, HeatmapGradientMap[type]));
             }
-
-            // Generate surfaceshading data by mapping devices to rooms.
-            const model = this.spaceFilterTool.roomModel;
-            const structureInfo = new Autodesk.DataVisualization.Core.ModelStructureInfo(model);
-            const heatmapData = await structureInfo.generateSurfaceShadingData(data);
-
-            // Setup surfaceshading
-            await this.dataVizTool.setupSurfaceShading(model, heatmapData);
-
-            const supportedTypes = Array.from(new Set(data.map(d => d.type)));
-            supportedTypes.forEach(type => this.dataVizTool.registerSurfaceShadingColors(type, HeatmapGradientMap[type]));
 
             this.dataVizTool.renderSurfaceShading(floor.name, this.currentHeatmapSensorType, this.getSensorValue);
 
@@ -1495,6 +1613,10 @@
             this.clearHeatmap();
             this.heatmapColorGradientBar.destroy();
             this.dataVizTool?.removeAllViewables();
+
+            if (this.timeSliderControl) {
+                this.timeSliderControl.destroy();
+            }
 
             if (this.levelSelector) {
                 this.levelSelector.removeEventListener(
