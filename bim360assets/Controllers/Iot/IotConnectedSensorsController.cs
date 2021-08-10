@@ -268,20 +268,37 @@ namespace bim360assets.Controllers
 
         [HttpPost]
         [Route("api/iot/projects/{projectId}/records:batch-mock")]
-        public async Task<IActionResult> MockRecordsForAllSensors([FromRoute] string projectId, [FromHeader(Name ="x-ads-force")] bool xAdsForce)
+        public async Task<IActionResult> MockRecordsForAllSensors([FromRoute] string projectId, [FromHeader(Name = "x-ads-force")] bool xAdsForce, [FromBody] BatchOverrideRecordMockOption overrideOptions = null)
         {
             try
             {
+                var sensors = await this.sensorRepository.GetAll("Project", s => s.Project.ExternalId == projectId);
+                if (overrideOptions != null && overrideOptions.Ids.Count > 0)
+                    sensors = sensors.Where(s => overrideOptions.Ids.Contains(s.ExternalId)).ToList();
+
                 if (xAdsForce == true)
                 {
-                    await this.recordRepository.Clear();
-                    await this.recordRepository.SaveChangesAsync();
+                    if (overrideOptions != null && overrideOptions.Ids.Count > 0)
+                    {
+                        foreach (var sensor in sensors)
+                            await this.recordRepository.Delete(r => r.SensorId == sensor.Id);
+
+                        await this.recordRepository.SaveChangesAsync();
+                    }
+                    else
+                    {
+                        await this.recordRepository.Clear();
+                        await this.recordRepository.SaveChangesAsync();
+                    }
                 }
 
-                var sensors = await this.sensorRepository.GetAll("Project", s => s.Project.ExternalId == projectId);
-                var weatherData = await this.weatherDataService.GetWeatherDataForPastDays();
-
+                List<WeatherData> weatherData = null;
                 var result = new Dictionary<string, List<Record>>();
+
+                if (overrideOptions == null)
+                    weatherData = await this.weatherDataService.GetWeatherDataForPastDays();
+                else
+                    weatherData = await this.weatherDataService.GetWeatherDataForPastDays(overrideOptions);
 
                 foreach (var sensor in sensors)
                 {
@@ -306,7 +323,7 @@ namespace bim360assets.Controllers
 
         [HttpPost]
         [Route("api/iot/projects/{projectId}/sensors/{sensorId}/records:mock")]
-        public async Task<IActionResult> MockSensorValuesById([FromRoute] string projectId, [FromRoute] string sensorId, [FromHeader(Name ="x-ads-force")] bool xAdsForce)
+        public async Task<IActionResult> MockSensorValuesById([FromRoute] string projectId, [FromRoute] string sensorId, [FromHeader(Name = "x-ads-force")] bool xAdsForce, [FromBody] OverrideRecordMockOption overrideOptions = null)
         {
             try
             {
@@ -321,7 +338,17 @@ namespace bim360assets.Controllers
                     await this.recordRepository.SaveChangesAsync();
                 }
 
-                var weatherData = await this.weatherDataService.GetWeatherDataForPastDays();
+                List<WeatherData> weatherData = null;
+
+                if (overrideOptions == null)
+                {
+                    weatherData = await this.weatherDataService.GetWeatherDataForPastDays();
+                }
+                else
+                {
+                    weatherData = await this.weatherDataService.GetWeatherDataForPastDays(overrideOptions);
+                }
+
                 var result = await this.MockRecordsBySensor(sensor, weatherData);
 
                 return Ok(result);

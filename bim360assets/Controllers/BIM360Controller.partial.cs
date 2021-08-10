@@ -79,7 +79,7 @@ namespace bim360assets.Controllers
         {
             var sensorNameAttr = await this.GetCustomAttributeByNameAsync(projectId, this.sensorNameCustomAttr);
             var paginatedAssets = supportedSensorNames
-                .Select(name => this.GetAssetsByCustomAttributeAsync(projectId, sensorNameAttr.Name, name, null))
+                .Select(name => this.GetAssetsByCustomAttributeAsync(projectId, sensorNameAttr.Name, name, null, 100))
                 .ToList();
 
             var results = await Task.WhenAll(paginatedAssets);
@@ -122,6 +122,16 @@ namespace bim360assets.Controllers
             request.AddParameter("includeCustomAttributes", true, ParameterType.QueryString);
             request.AddParameter(attrFilter, value, ParameterType.QueryString);
             request.AddHeader("Authorization", "Bearer " + credentials.TokenInternal);
+
+            if (!string.IsNullOrWhiteSpace(cursorState))
+            {
+                request.AddParameter("cursorState", cursorState, ParameterType.QueryString);
+            }
+
+            if (pageLimit != null && pageLimit.HasValue)
+            {
+                request.AddParameter("limit", pageLimit.Value, ParameterType.QueryString);
+            }
 
             IRestResponse assetsResponse = await client.ExecuteTaskAsync(request);
             var assets = JsonConvert.DeserializeObject<PaginatedAssets>(assetsResponse.Content);

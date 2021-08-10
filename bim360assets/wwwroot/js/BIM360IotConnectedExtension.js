@@ -1031,19 +1031,19 @@
         destroy() {
             if (!this.instance) return;
 
-            this.initialize.uninitialize();
+            this.instance.uninitialize();
 
-            timeSlider.removeEventListener(
+            this.instance.removeEventListener(
                 Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_INITIALIZED_EVENT,
                 this.onTimeSliderControlInitialized
             );
 
-            timeSlider.removeEventListener(
+            this.instance.removeEventListener(
                 Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_TIME_RANGE_UPDATED_EVENT,
                 this.onTimeSliderControlTimeRangeUpdated
             );
 
-            timeSlider.removeEventListener(
+            this.instance.removeEventListener(
                 Autodesk.DataVisualization.UI.TIME_SLIDER_CONTROL_CURRENT_TIME_UPDATED_EVENT,
                 this.onTimeSliderControlCurrentTimeUpdated
             );

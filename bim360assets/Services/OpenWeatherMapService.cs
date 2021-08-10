@@ -24,6 +24,7 @@ using Newtonsoft.Json;
 using Microsoft.Extensions.Options;
 using RestSharp;
 using Newtonsoft.Json.Linq;
+using bim360assets.Models.Iot;
 
 namespace bim360assets.Services
 {
@@ -48,6 +49,8 @@ namespace bim360assets.Services
     public interface IOpenWeatherMapService
     {
         Task<List<WeatherData>> GetWeatherDataForPastDays(int days = 5);
+
+        Task<List<WeatherData>> GetWeatherDataForPastDays(OverrideRecordMockOption overrideOptions, int days = 5);
     }
 
     public class OpenWeatherMapService : IOpenWeatherMapService
@@ -60,15 +63,15 @@ namespace bim360assets.Services
             this.options = options;
         }
 
-        private async Task<JObject> GetWeatherDataForPastTime(int timestamp)
+        private async Task<JObject> GetWeatherDataForPastTime(string latitude, string longitude, int timestamp)
         {
             try
             {
                 RestClient client = new RestClient(BASE_URL);
                 RestRequest request = new RestRequest("/data/2.5/onecall/timemachine", RestSharp.Method.GET);
                 request.AddParameter("appid", this.options.ApiKey, ParameterType.QueryString);
-                request.AddParameter("lat", this.options.Latitude, ParameterType.QueryString);
-                request.AddParameter("lon", this.options.Longitude, ParameterType.QueryString);
+                request.AddParameter("lat", latitude, ParameterType.QueryString);
+                request.AddParameter("lon", longitude, ParameterType.QueryString);
                 request.AddParameter("dt", timestamp, ParameterType.QueryString);
                 request.AddParameter("units", this.options.Units, ParameterType.QueryString);
 
@@ -80,7 +83,7 @@ namespace bim360assets.Services
             return null;
         }
 
-        public async Task<List<WeatherData>> GetWeatherDataForPastDays(int days = 5)
+        private async Task<List<WeatherData>> GetWeatherDataForPastDays(string latitude, string longitude, int days = 5)
         {
             if (days > 5)
                 throw new InvalidOperationException("Input days cannot be greater than 5 due to OpenWeatherMap Free API limit");
@@ -94,7 +97,7 @@ namespace bim360assets.Services
             {
                 var utcDate = date.ToUniversalTime();
                 var timestamp = (int)utcDate.Subtract(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Local)).TotalSeconds;
-                dynamic result = await this.GetWeatherDataForPastTime(timestamp);
+                dynamic result = await this.GetWeatherDataForPastTime(latitude, longitude, timestamp);
 
                 foreach (JObject rawData in result.hourly)
                 {
@@ -108,6 +111,16 @@ namespace bim360assets.Services
             }
 
             return weatherData.OrderBy(d => d.Timestamp).ToList();
+        }
+
+        public async Task<List<WeatherData>> GetWeatherDataForPastDays(OverrideRecordMockOption overrideOptions, int days = 5)
+        {
+            return await this.GetWeatherDataForPastDays(overrideOptions.Latitude, overrideOptions.Longitude, days);
+        }
+
+        public async Task<List<WeatherData>> GetWeatherDataForPastDays(int days = 5)
+        {
+            return await this.GetWeatherDataForPastDays(this.options.Latitude, this.options.Longitude, days);
         }
     }
 }
