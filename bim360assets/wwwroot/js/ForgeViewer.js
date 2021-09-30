@@ -18,18 +18,20 @@
 
 var viewer = null;
 
-function launchViewer(urn, viewableId) {
+function launchViewer(models) {
   if (viewer != null) {
     viewer.tearDown()
     viewer.finish()
     viewer = null
     $("#forgeViewer").empty();
   }
+
+  if (!models || models.length <= 0)
+    return alert('Empty `models` input');
+
   var options = {
     env: 'AutodeskProduction',
-    api: 'derivativeV2' + (atob(urn.replace('_', '/')).indexOf('emea') > -1 ? '_EU' : ''),
-    //env: 'MD20Prod' + (atob(urn.replace('urn:', '').replace('_', '/')).indexOf('emea') > -1 ? 'EU' : 'US'),
-    //api: 'D3S',
+    api: 'derivativeV2',
     getAccessToken: getForgeToken
   };
 
@@ -37,26 +39,18 @@ function launchViewer(urn, viewableId) {
     const config3d = {
       extensions: ['BIM360IotConnectedExtension', 'BIM360AssetExtension'],
       //enableLocationsAPI: true !<<< Uncomment to use BIM360 Locations API
+      // getAssetModels: (viewer) => { //!<<< Uncomment to specify the models where your assets are located.
+      //   const models = viewer.impl.modelQueue().getModels().concat();
+      //   return models.splice(1, 1); //!<<< e.g. The assets models are within the 2nd model
+      // }
     };
     viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('forgeViewer'), config3d);
-    viewer.start();
-    var documentId = 'urn:' + urn;
-    Autodesk.Viewing.Document.load(documentId, onDocumentLoadSuccess, onDocumentLoadFailure);
+
+    //load model one by one in sequence
+    const util = new MultipleModelUtil(viewer);
+    util.processModels(models);
   });
-  async function onDocumentLoadSuccess(doc) {
-    await doc.downloadAecModelData();
-    var viewables = (viewableId ? doc.getRoot().findByGuid(viewableId) : doc.getRoot().getDefaultGeometry());
-    viewer.loadDocumentNode(doc, viewables).then(i => {
-
-    });
-  }
-
-  function onDocumentLoadFailure(viewerErrorCode) {
-    console.error('onDocumentLoadFailure() - errorCode:' + viewerErrorCode);
-  }
 }
-
-
 
 function getForgeToken(callback) {
   jQuery.ajax({

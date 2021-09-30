@@ -55,8 +55,10 @@
     }
 
     class BIM360DataProvider {
-        constructor(viewer) {
+        constructor(viewer, options) {
             this.viewer = viewer;
+            this.options = options;
+
             this.users = null;
             this.statuses = null;
             this.categories = null;
@@ -97,6 +99,16 @@
             this.locationBreadcrumbs = null;
             this.assetInfoCache = null;
             this.viewer = null;
+        }
+
+        getAssetModels() {
+            const { getAssetModels } = this.options;
+
+            if (getAssetModels instanceof Function) {
+                return getAssetModels(this.viewer);
+            }
+
+            return [].concat(this.viewer.model);
         }
 
         async fetchData() {
@@ -171,8 +183,13 @@
                                 };
                             }
 
-                            this.assetInfoCache = data;
-                            return resolve(data);
+                            if (!this.assetInfoCache) {
+                                this.assetInfoCache = data;
+                            } else {
+                                this.assetInfoCache = Object.assign({}, this.assetInfoCache, data);
+                            }
+
+                            return resolve(this.assetInfoCache);
                         },
                         (error) => reject(error));
                 } catch (ex) {
@@ -944,6 +961,7 @@
             this.options = options;
             this.uiCreated = false;
             this.dataProvider = dataProvider;
+            this.modelExternalIdMaps = null;
 
             this.onSelectionChanged = this.onSelectionChanged.bind(this);
 
@@ -1018,33 +1036,69 @@
 
         async hoverAsset(externalId) {
             try {
-                const assetId = await this.getAssetViewerId(externalId);
-                this.viewer.impl.highlightObjectNode(this.viewer.model, assetId, true, false);
+                const result = await this.getAssetViewerId(externalId);
+                this.viewer.impl.highlightObjectNode(result.model, result.assetId, true, false);
             } catch (ex) {
             }
         }
 
         async dehoverAsset(externalId) {
             try {
-                const assetId = await this.getAssetViewerId(externalId);
-                this.viewer.impl.highlightObjectNode(this.viewer.model, assetId, false);
+                const result = await this.getAssetViewerId(externalId);
+                this.viewer.impl.highlightObjectNode(result.model, result.assetId, false);
             } catch (ex) {
             }
         }
 
-        async getAssetViewerId(externalId) {
+        async buildExternalIdMaps() {
             try {
-                const getExternalIdMapping = () => {
+                const getExternalIdMapping = (model) => {
                     return new Promise((resolve, reject) => {
-                        this.viewer.model.getExternalIdMapping(
+                        model.getExternalIdMapping(
                             map => resolve(map),
                             error => reject(new Error(error))
                         )
                     });
                 };
 
-                const extIdMap = await getExternalIdMapping();
-                return extIdMap[externalId];
+                this.modelExternalIdMaps = {};
+                const models = this.dataProvider.getAssetModels();
+                for (let i = 0; i < models.length; i++) {
+                    const model = models[i];
+                    const extIdMap = await getExternalIdMapping(model);
+                    const modelKey = model.getModelKey();
+                    this.modelExternalIdMaps[modelKey] = extIdMap;
+                }
+            } catch (ex) {
+                console.error(`[BIM360AssetInfoPanel]: ${ex}`);
+                return false;
+            }
+
+            return true;
+        }
+
+        async getAssetViewerId(externalId) {
+            try {
+                if (!this.modelExternalIdMaps) {
+                    await this.buildExternalIdMaps();
+                }
+
+                let result = null;
+                const models = this.dataProvider.getAssetModels();
+                for (let i = 0; i < models.length; i++) {
+                    const model = models[i];
+                    const modelKey = model.getModelKey();
+                    let extIdMap = this.modelExternalIdMaps[modelKey];
+
+                    if (extIdMap && extIdMap.hasOwnProperty(externalId)) {
+                        result = {
+                            model,
+                            assetId: extIdMap[externalId]
+                        };
+                        break;
+                    }
+                }
+                return result;
             } catch (ex) {
                 console.warn(`[BIM360AssetInfoPanel]: ${ex}`);
                 return null;
@@ -1137,15 +1191,15 @@
                     event.target.parentElement.classList.add('active');
 
                     const externalId = getExternalId(asset.customAttributes);
-                    let dbId = null;
+                    let result = null;
                     if (externalId)
-                        dbId = await this.getAssetViewerId(externalId);
+                        result = await this.getAssetViewerId(externalId);
 
                     this.viewer.clearSelection();
 
                     this.dehoverAsset(externalId);
 
-                    if (!dbId) {
+                    if (!result) {
                         alert(`No External Id value found for Asset \`${asset.clientAssetId}\`!`)
                     } else {
                         this.dehoverAsset(externalId);
@@ -1154,8 +1208,8 @@
                         this.viewer.impl.visibilityManager.aggregateIsolate(
                             [
                                 {
-                                    ids: [dbId],
-                                    model: this.viewer.model
+                                    ids: [result.assetId],
+                                    model: result.model
                                 }
                             ],
                             {
@@ -1163,7 +1217,7 @@
                             }
                         );
 
-                        this.viewer.fitToView([dbId]);
+                        this.viewer.fitToView([result.assetId], result.model);
                     }
 
                     console.log(`Asset \`${asset.clientAssetId}\` clicked!`, asset);
@@ -1388,11 +1442,14 @@
         }
 
         getSelectedAsset() {
-            const selSet = this.viewer.getSelection();
+            const selSet = this.viewer.getAggregateSelection();
+
+            if (selSet.length <= 0)
+                return null;
 
             return {
-                model: this.viewer.model,
-                dbId: selSet[0]
+                model: selSet[0].model,
+                dbId: selSet[0].selection[0]
             }
         };
 
@@ -1420,12 +1477,26 @@
 
             if (!is2d) {
                 const showAll = () => {
+                    const isolation = [
+                        {
+                            model: this.viewer.model
+                        }
+                    ];
+
+                    const assetModels = this.dockingPanel.dataProvider.getAssetModels();
+                    for (let i = 0; i < assetModels.length; i++) {
+                        let model = assetModels[i];
+                        let modelKey = model.getModelKey();
+
+                        if (modelKey != this.viewer.model.getModelKey()) {
+                            isolation.push({
+                                model
+                            })
+                        }
+                    }
+
                     this.viewer.impl.visibilityManager.aggregateIsolate(
-                        [
-                            {
-                                model: this.viewer.model
-                            }
-                        ],
+                        isolation,
                         {
                             hideLoadedModels: true
                         }
@@ -2142,7 +2213,7 @@
         constructor(viewer, options) {
             super(viewer, options);
 
-            const dataProvider = new BIM360DataProvider(viewer);
+            const dataProvider = new BIM360DataProvider(viewer, options);
             this.dataProvider = dataProvider;
 
             this.assetListPanel = null;
@@ -2186,6 +2257,15 @@
 
                 // Cache asset props from load master model
                 await this.dataProvider.buildAssetInfoCache(viewer.model);
+                const assetModels = this.dataProvider.getAssetModels();
+                for (let i = 0; i < assetModels.length; i++) {
+                    let model = assetModels[i];
+                    let modelKey = model.getModelKey();
+
+                    if (modelKey != this.viewer.model.getModelKey()) {
+                        await this.dataProvider.buildAssetInfoCache(model);
+                    }
+                }
             } catch { }
 
             const assetListButton = new Autodesk.Viewing.UI.Button('toolbar-bim360AssetList');

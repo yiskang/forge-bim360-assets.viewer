@@ -24,6 +24,7 @@ $(document).ready(function () {
       // yes, it is signed in...
       $('#signOut').show();
       $('#refreshHubs').show();
+      $('#viewModels').show();
 
       // prepare sign out
       $('#signOut').click(function () {
@@ -38,6 +39,28 @@ $(document).ready(function () {
       // and refresh button
       $('#refreshHubs').click(function () {
         $('#userHubs').jstree(true).refresh();
+      });
+
+      $('#viewModels').click(function () {
+        let treeInst = $('#userHubs').jstree(true);
+        let selectedNodeIds = $('#userHubs').jstree('get_selected');
+        let models = [];
+        for (let i = 0; i < selectedNodeIds.length; i++) {
+          let urn = selectedNodeIds[i];
+          let node = treeInst.get_node(`${urn}_anchor`);
+          if (!node || (node.type !== 'versions'))
+            continue;
+
+          models.push({
+            name: treeInst.get_node(node.parent)?.original.text,
+            urn: `urn:${urn}`
+          });
+        }
+
+        if (models.length <= 0 || (models.length !== selectedNodeIds.length))
+          alert('Nothing selected or not all selected nodes are versions-typed');
+
+        launchViewer(models);
       });
 
       // finally:
@@ -69,7 +92,7 @@ function prepareUserHubsTree() {
   $('#userHubs').jstree({
     'core': {
       'themes': { "icons": true },
-      'multiple': false,
+      'multiple': true,
       'data': {
         "url": '/api/forge/datamanagement',
         "dataType": "json",
@@ -129,6 +152,12 @@ function prepareUserHubsTree() {
         'icon': 'glyphicon glyphicon-ban-circle'
       }
     },
+    "checkbox": {
+      keep_selected_style: false,
+      three_state: false,
+      deselect_all: true,
+      cascade: 'none'
+    },
     "sort": function (a, b) {
       var a1 = this.get_node(a);
       var b1 = this.get_node(b);
@@ -143,21 +172,21 @@ function prepareUserHubsTree() {
       }
       else return a1.type < b1.type ? -1 : (a1.text > b1.text) ? 1 : 0;
     },
-    "plugins": ["types", "state", "sort"],
+    "plugins": ["types", "checkbox", "state", "sort"],
     "state": { "key": "autodeskHubs" }// key restore tree state
-  }).bind("activate_node.jstree", function (evt, data) {
-    if (data != null && data.node != null && (data.node.type == 'versions' || data.node.type == 'bim360documents')) {
-      var urn;
-      var viewableId
-      if (data.node.id.indexOf('|') > -1) {
-        urn = data.node.id.split('|')[1];
-        viewableId = data.node.id.split('|')[2];
-        launchViewer(urn, viewableId);
-      }
-      else {
-        launchViewer(data.node.id);
-      }
-    }
+    // }).bind("activate_node.jstree", function (evt, data) {
+    //   if (data != null && data.node != null && (data.node.type == 'versions' || data.node.type == 'bim360documents')) {
+    //     var urn;
+    //     var viewableId
+    //     if (data.node.id.indexOf('|') > -1) {
+    //       urn = data.node.id.split('|')[1];
+    //       viewableId = data.node.id.split('|')[2];
+    //       launchViewer(urn, viewableId);
+    //     }
+    //     else {
+    //       launchViewer(data.node.id);
+    //     }
+    //   }
   });
 }
 
