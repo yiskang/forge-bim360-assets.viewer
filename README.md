@@ -1,4 +1,4 @@
-# View BIM 360 Assets
+# View BIM 360 Assets and Visualize sensor data
 
 ![Platforms](https://img.shields.io/badge/platform-Windows|MacOS-lightgray.svg)
 ![.NET](https://img.shields.io/badge/.NET%20Core-3.1-blue.svg)
@@ -13,23 +13,33 @@
 
 # Description
 
-Demonstrate how to read BIM 360 **Assets** data with Forge Viewer.
+Demonstrate how to read BIM 360 **Assets** data and visualize sensor data  with Forge Viewer.
 
-Uses [Data Management](https://forge.autodesk.com/en/docs/data/v2) to list hubs, projects and files. Uses [Viewer](https://forge.autodesk.com/en/docs/viewer/v6/overview/) to show models and extensions to create toolbar buttons and panels. The sample implements the following features in the **BIM360AssetExtension.js**:
+Uses [Data Management](https://forge.autodesk.com/en/docs/data/v2) to list hubs, projects and files. Uses [Viewer](https://forge.autodesk.com/en/docs/viewer/v6/overview/) to show models and extensions to create toolbar buttons and panels. Uses [Data Visualization](https://forge.autodesk.com/en/docs/dataviz/v1/developers_guide/introduction/) extension to place sensors and render heatmap.
+
+The sample implements the following features in the **BIM360AssetExtension.js**:
 
 - **BIM360AssetListPanel**: Lists [BIM 360](https://forge.autodesk.com/en/docs/bim360/v1/overview/) Assets on a data table with pagination support on the panel
 - **BIM360AssetInfoPanel**: Display asset data of selected object from [BIM 360](https://forge.autodesk.com/en/docs/bim360/v1/overview/) Assets module.
 - **BIM360SpaceFilterPanel**: Lists levels and rooms of the RVT model in a tree hierarchy, and it can apply proper section box (filter) to the model upon checked level or room to bring better view for assets.
+- **BIM360TimelinerControl**: Timeline UI control for displaying sensor data and heatmap in different time periods. It's built on the top of `ChronosTimeSliderControl` of [forge-dataviz-iot-react-components-es5](https://github.com/yiskang/forge-dataviz-iot-react-components-es5).
+- **BIM360HeatmapColorGradientBar**: Heatmap UI control for displaying heatmap color gradient legend, switching current heatmap type and turn on/off heatmap. It's a pure JavaScript control similar to `HeatmapOptions` of [forge-dataviz-iot-react-components-es5](https://github.com/yiskang/forge-dataviz-iot-react-components-es5).
+- **BIM360SensorTooltip**: Tooltip UI control for displaying sensor name and current data.
+- **BIM360SensorDataGraphPanel**: UI control for displaying history data of selected sensor.
 
 ## Thumbnail
 
-This picture shows the functionalities of the `BIM360AssetExtension` from left-bottom side to right side accordingly are `BIM360SpaceFilterPanel`, `BIM360AssetListPanel` and `BIM360AssetInfoPanel`. The view is activating the level filter (sectioning) of the `BIM360SpaceFilterPanel` and showing the selected air terminal's asset info from the BIM360 Assets service by `BIM360AssetInfoPanel`.
+This picture shows the functionalities of the `BIM360AssetExtension` from left-bottom side to right side accordingly are `BIM360SpaceFilterPanel`, `BIM360AssetListPanel` and `BIM360AssetInfoPanel`. The view is activating the level filter (sectioning) of the `BIM360SpaceFilterPanel` and showing the selected air terminal's asset info from the BIM360 Assets service by `BIM360AssetInfoPanel`. Also, one UI control, `BIM360TimelinerControl` , from `BIM360IotConnectedExtension`.
 
-![thumbnail](/thumbnail.png)
+![thumbnail](/thumbnail.jpg)
 
 This picture shows similar functionalities as the above one does, but the view activates the room filter of the `BIM360SpaceFilterPanel` where the selected air terminal is located instead.
 
-![thumbnail-2](/thumbnail-2.png)
+![thumbnail-2](/thumbnail-2.jpg)
+
+This picture shows the functionalities of the `BIM360IotConnectedExtension` from right-bottom side to right side accordingly are `BIM360SensorDataGraphPanel`, `BIM360SensorTooltip`, `BIM360TimelinerControl`, and `BIM360HeatmapColorGradientBar`. The view is activating the level filter (sectioning) of the `BIM360SpaceFilterPanel` from `BIM360AssetExtension`, showing selected water heater's temperature history, showing current temperature heatmap of current time selected in the `BIM360TimelinerControl`, and we can see the color gradient legend of the temperature heatmap.
+
+![thumbnail-3](/thumbnail-3.jpg)
 
 ## Demonstration
 
@@ -166,6 +176,7 @@ Documentation:
 - [BIM 360 Assets API Field Guide](https://forge.autodesk.com/en/docs/bim360/v1/overview/field-guide/assets/)
 - [BIM 360 API](https://forge.autodesk.com/en/docs/bim360/v1/overview/) and [App Provisioning](https://forge.autodesk.com/blog/bim-360-docs-provisioning-forge-apps)
 - [Data Management API](https://forge.autodesk.com/en/docs/data/v2/overview/)
+- [Data Visualization](https://forge.autodesk.com/en/docs/dataviz/v1/developers_guide/introduction/)
 - [Viewer](https://forge.autodesk.com/en/docs/viewer/v7)
 
 Tutorials:
@@ -173,6 +184,7 @@ Tutorials:
 - [Setup BIM 360 Assets Project Settings](https://forge.autodesk.com/en/docs/bim360/v1/tutorials/assets/create-assets-project-settings/)
 - [Retrieve BIM 360 Assets Data](https://forge.autodesk.com/en/docs/bim360/v1/tutorials/assets/retrieve-assets-data/)
 - [Learn Forge - View BIM 360 Models](http://learnforge.autodesk.io/#/tutorials/viewhubmodels)
+- [Data Visualization QuickStart](https://forge.autodesk.com/en/docs/dataviz/v1/developers_guide/quickstart/quickstart_intro/)
 
 Blogs:
 
@@ -202,8 +214,8 @@ This sample uses .NET Core and works fine on both Windows and MacOS, see [this t
         var options = {
             //env: 'AutodeskProduction',
             //api: 'derivativeV2' + (atob(urn.replace('_', '/')).indexOf('emea') > -1 ? '_EU' : ''),
-            env: 'MD20Prod' + (atob(urn.replace('urn:', '').replace('_', '/')).indexOf('emea') > -1 ? 'EU' : 'US'),
-            api: 'D3S',
+            env: 'AutodeskProduction2',
+            api: 'streamingV2'  + (atob(urn.replace('urn:', '').replace('_', '/')).indexOf('emea') > -1 ? '_EU' : ''),
             getAccessToken: getForgeToken
         };
         ```
