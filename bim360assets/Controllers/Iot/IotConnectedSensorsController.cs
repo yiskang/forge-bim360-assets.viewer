@@ -25,6 +25,7 @@ using bim360assets.Models.Iot;
 using Microsoft.EntityFrameworkCore;
 using bim360assets.Models.Repositories;
 using bim360assets.Services;
+using bim360assets.Libs;
 
 namespace bim360assets.Controllers
 {
@@ -89,6 +90,48 @@ namespace bim360assets.Controllers
             {
                 return BadRequest("Failed to save sensor to the database");
             }
+        }
+
+        [HttpPost]
+        [Route("api/iot/projects/{projectId}/sensors:batch-create")]
+        public async Task<IActionResult> BatchCreateSensors([FromRoute] string projectId, [FromBody] List<Sensor> sensors)
+        {
+            var project = await this.projectRepository.Get(p => p.ExternalId == projectId);
+
+            if (project == null)
+                return NotFound($"Project not found with external id = {projectId}");
+
+            foreach (var sensor in sensors)
+            {
+                if (sensor.Id != 0)
+                    sensor.Id = 0;
+
+                sensor.ProjectId = project.Id;
+
+                if (!this.TryValidateModel(sensor))
+                {
+                    sensor.ProjectId = -1;
+                }
+            }
+
+            var validSensors = sensors.Where(s => s.ProjectId > 0);
+            var invalidSensors = sensors.Where(s => s.ProjectId <= 0);
+
+            try
+            {
+                this.sensorRepository.AddRange(validSensors);
+                await this.sensorRepository.SaveChangesAsync();
+            }
+            catch (Exception)
+            {
+                return BadRequest("Failed to save sensors to the database");
+            }
+
+            return Ok(new
+            {
+                successResults = validSensors,
+                failedResults = invalidSensors
+            });
         }
 
         [HttpPatch]
@@ -190,6 +233,53 @@ namespace bim360assets.Controllers
             catch (Exception)
             {
                 return BadRequest("Failed to save sensor value to the database");
+            }
+        }
+
+        [HttpPost]
+        [Route("api/iot/projects/{projectId}/sensors:init")]
+        public async Task<IActionResult> InitializeSensors(string projectId)
+        {
+            try
+            {
+                Credentials credentials = await Credentials.FromSessionAsync(base.Request.Cookies, Response.Cookies);
+                if (credentials == null)
+                {
+                    throw new InvalidOperationException("Failed to refresh access token");
+                }
+
+                var accessToken = credentials.TokenInternal;
+                var results = await this.projectRepository.GetAll(p => p.ExternalId == projectId);
+                var project = results.SingleOrDefault();
+
+                if (project == null)
+                    return NotFound();
+
+                var attrDefs = await BIM360SensorInfoUtil.GetSensorAttributes(accessToken, projectId);
+                var sensorIdAttr = attrDefs.First(attr => attr.DisplayName.Contains(BIM360SensorInfoUtil.sensorIdCustomAttr));
+                var sensorNameAttr = attrDefs.First(attr => attr.DisplayName.Contains(BIM360SensorInfoUtil.sensorNameCustomAttr));
+
+                var sensorInfoSet = await BIM360SensorInfoUtil.GetSensorInfoSet(accessToken, projectId);
+
+                var sensors = sensorInfoSet.Select(sensorInfo => new Sensor
+                {
+                    Name = sensorInfo.First(ca => ca.Key == sensorNameAttr.Name).Value.ToString(),
+                    ExternalId = sensorInfo.First(ca => ca.Key == sensorIdAttr.Name).Value.ToString(),
+                    ProjectId = project.Id
+                });
+
+                this.sensorRepository.AddRange(sensors);
+                await this.sensorRepository.SaveChangesAsync();
+
+                return Ok(sensors);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    error = "Failed to initialize Iot project",
+                    cause = ex.Message
+                });
             }
         }
 

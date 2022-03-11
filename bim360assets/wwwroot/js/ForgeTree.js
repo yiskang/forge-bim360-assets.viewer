@@ -54,6 +54,88 @@ $(document).ready(function () {
       }
     });
   })
+  $('#mockIotSensorRecordsButton').click(function () {
+    $('#mockIotSensorRecordsProgressBar .progress-bar').css('width', '0%').attr('aria-valuenow', 0);
+    $('#mockIotSensorRecordsProgressBar p').text('Mocking sensor records from weather data ...');
+
+    $('#mockIotSensorRecordsButton').addClass('hidden');
+    $('#mockIotSensorRecordsButton').removeClass('show');
+
+    $('#mockIotSensorRecordsProgressBar').removeClass('hidden');
+    $('#mockIotSensorRecordsProgressBar').addClass('show');
+
+    let autodeskNode = $('#userHubs').jstree(true).get_selected(true)[0];
+    let idParams = autodeskNode.id.split('/');
+    let hubId = idParams[idParams.length - 3].replace('b.', '');
+    let projectId = idParams[idParams.length - 1].replace('b.', '');
+
+    jQuery.ajax({
+      url: `/api/iot/projects/${projectId}/records:batch-mock`,
+      type: 'post',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-ads-force': true
+      },
+      success: function (data) {
+        console.log(`Completed! Successfully mocked sensor data for Project \`${projectId}\`.`, data);
+
+        $('#mockIotSensorRecordsProgressBar .progress-bar').css('width', '100%').attr('aria-valuenow', 100);
+        $('#mockIotSensorRecordsProgressBar p').text(`Successfully mocked sensor data for Project \`${projectId}\`.`);
+
+        setTimeout(
+          () => $('#mockIotSensorRecordsModal').modal('hide'),
+          3000
+        );
+      }
+    });
+  });
+
+  $('#initializeIotProjectButton').click(function () {
+    $('#initializeIotProjectProgressBar .progress-bar').css('width', '0%').attr('aria-valuenow', 0);
+    $('#initializeIotProjectProgressBar p').text('0/2 Initializing ...');
+
+    $('#initializeIotProjectButton').addClass('hidden');
+    $('#initializeIotProjectButton').removeClass('show');
+
+    $('#initializeIotProjectProgressBar').removeClass('hidden');
+    $('#initializeIotProjectProgressBar').addClass('show');
+
+    let autodeskNode = $('#userHubs').jstree(true).get_selected(true)[0];
+    let idParams = autodeskNode.id.split('/');
+    let hubId = idParams[idParams.length - 3].replace('b.', '');
+    let projectId = idParams[idParams.length - 1].replace('b.', '');
+
+    jQuery.post({
+      url: '/api/iot/projects',
+      contentType: 'application/json',
+      data: JSON.stringify({
+        name: autodeskNode.text,
+        externalId: projectId
+      }),
+      success: function (data) {
+        console.log(`Iot Project \`${projectId}\` created.`, data);
+
+        $('#initializeIotProjectProgressBar .progress-bar').css('width', '50%').attr('aria-valuenow', 50);
+        $('#initializeIotProjectProgressBar p').text('1/2 Fetching sensor info data from BIM360 Assets ...');
+
+        jQuery.post({
+          url: `/api/iot/projects/${projectId}/sensors:init`,
+          contentType: 'application/json',
+          success: function (data) {
+            console.log(`Completed! Successfully saved Iot sensor info data of Project \`${projectId}\` into database.`, data);
+
+            $('#initializeIotProjectProgressBar .progress-bar').css('width', '100%').attr('aria-valuenow', 100);
+            $('#initializeIotProjectProgressBar p').text('2/2 Saved sensor info data into database ...');
+
+            setTimeout(
+              () => $('#initializeIotProjectModal').modal('hide'),
+              3000
+            );
+          }
+        });
+      }
+    });
+  });
 
   $.getJSON("/api/forge/clientid", function (res) {
     $("#ClientID").val(res.id);
@@ -143,7 +225,8 @@ function prepareUserHubsTree() {
       }
       else return a1.type < b1.type ? -1 : (a1.text > b1.text) ? 1 : 0;
     },
-    "plugins": ["types", "state", "sort"],
+    "plugins": ["types", "state", "sort", "contextmenu"],
+    contextmenu: { items: autodeskCustomMenu },
     "state": { "key": "autodeskHubs" }// key restore tree state
   }).bind("activate_node.jstree", function (evt, data) {
     if (data != null && data.node != null && (data.node.type == 'versions' || data.node.type == 'bim360documents')) {
@@ -159,6 +242,66 @@ function prepareUserHubsTree() {
       }
     }
   });
+}
+
+async function autodeskCustomMenu(autodeskNode, buildContextMenu) {
+  var items;
+
+  switch (autodeskNode.type) {
+    case "bim360projects":
+      let idParams = autodeskNode.id.split('/');
+      let hubId = idParams[idParams.length - 3].replace('b.', '');
+      let projectId = idParams[idParams.length - 1].replace('b.', '');
+
+      let isExisted = await isIotConnectedProjectExisted(projectId);
+
+      if (isExisted) {
+        items = {
+          mockIotSensors: {
+            label: 'Mock Iot Sensors',
+            action: function () {
+              $('#mockIotSensorRecordsModal').modal('show');
+            },
+            icon: 'glyphicon glyphicon-dashboard'
+          }
+        };
+      } else {
+        items = {
+          initIotProject: {
+            label: 'Initialize Iot Project',
+            action: function () {
+              // $('#initializeIotProjectButton').addClass('hidden');
+              // $('#initializeIotProjectButton').removeClass('show');
+
+              // $('#initializeIotProjectProgressBar').removeClass('hidden');
+              // $('#initializeIotProjectProgressBar').addClass('show');
+
+              $('#initializeIotProjectModal').modal('show');
+            },
+            icon: 'https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/bim360project.png'
+          }
+        };
+      }
+      break;
+  }
+
+  buildContextMenu(items);
+}
+
+async function isIotConnectedProjectExisted(projectId) {
+  function getIotProject(projectId) {
+    return jQuery.ajax({
+      url: '/api/iot/projects/' + projectId
+    });
+  }
+
+  try {
+    await getIotProject(projectId);
+    return true;
+  } catch {
+    console.warn(`Iot Project \`${projectId}\` not found`);
+    return false;
+  }
 }
 
 function showUser() {

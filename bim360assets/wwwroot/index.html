@@ -4,7 +4,8 @@
 <head>
   <title>Autodesk Forge - BIM 360 Assets</title>
   <meta charset="utf-8" />
-  <link rel="shortcut icon" href="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/favicon.ico">
+  <link rel="shortcut icon"
+    href="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/favicon.ico">
   <!-- Common packages: jQuery, Bootstrap, jsTree -->
   <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
   <script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/js/bootstrap.min.js"></script>
@@ -14,12 +15,15 @@
   <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/jstree/3.3.7/themes/default/style.min.css" />
   <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/jstree/3.3.7/themes/default-dark/style.min.css" />
   <script src="//cdnjs.cloudflare.com/ajax/libs/clipboard.js/1.6.0/clipboard.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.1.2/dist/echarts.min.js" integrity="sha256-TI0rIaxop+pDlHNVI6kDCFvmpxNYUnVH/SMjknZ/W0Y=" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.1.2/dist/echarts.min.js"
+    integrity="sha256-TI0rIaxop+pDlHNVI6kDCFvmpxNYUnVH/SMjknZ/W0Y=" crossorigin="anonymous"></script>
   <!-- Autodesk Forge Viewer files -->
-  <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css" type="text/css">
+  <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css"
+    type="text/css">
   <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
   <!-- Autodesk Data Visualization Component files -->
-  <link rel="stylesheet" href="https://yiskang.github.io/forge-dataviz-iot-react-components-es5/dist/timeslider.css" type="text/css">
+  <link rel="stylesheet" href="https://yiskang.github.io/forge-dataviz-iot-react-components-es5/dist/timeslider.css"
+    type="text/css">
   <script src="https://yiskang.github.io/forge-dataviz-iot-react-components-es5/dist/vendor.js"></script>
   <script src="https://yiskang.github.io/forge-dataviz-iot-react-components-es5/dist/timeslider.js"></script>
   <!-- this project files -->
@@ -42,8 +46,9 @@
         </li>
       </ul>
       <div style="float: right; margin-top: 15px;">
-        <span style="padding-right: 5px;" data-toggle="modal" data-target="#provisionAccountModal" title="Enable my BIM 360 Account"><span
-            class="glyphicon glyphicon-cog glyphiconTop mlink"> </span> Enable my BIM 360 Account</span>
+        <span style="padding-right: 5px;" data-toggle="modal" data-target="#provisionAccountModal"
+          title="Enable my BIM 360 Account"><span class="glyphicon glyphicon-cog glyphiconTop mlink"> </span> Enable my
+          BIM 360 Account</span>
       </div>
     </div>
   </nav>
@@ -54,9 +59,10 @@
         <div class="panel panel-default fill">
           <div class="panel-heading" data-toggle="tooltip" style="padding: 0px;">
             <span id="userInfo"></span>
-            <span id="refreshHubs" class="glyphicon glyphicon-refresh" style="cursor: pointer; display: none" title="Refresh list of files"></span>
-            <span id="signOut" class="glyphicon glyphicon-log-out" style="margin-top:5px;cursor: pointer; float: right; display: none"
-              title="Sign out"> </span>
+            <span id="refreshHubs" class="glyphicon glyphicon-refresh" style="cursor: pointer; display: none"
+              title="Refresh list of files"></span>
+            <span id="signOut" class="glyphicon glyphicon-log-out"
+              style="margin-top:5px;cursor: pointer; float: right; display: none" title="Sign out"> </span>
           </div>
           <div id="userHubs">
             <div style="padding-top: 100px; text-align: center;">
@@ -103,14 +109,18 @@
           </p>
           Use this as Forge Client ID:
           <div class="input-group">
-            <input type="text" readonly="true" aria-describedby="CopyClientID" id="ClientID" class="form-control" value="" />
-            <span class="input-group-addon" style="cursor: pointer" data-clipboard-target="#ClientID" id="CopyClientID">Copy
+            <input type="text" readonly="true" aria-describedby="CopyClientID" id="ClientID" class="form-control"
+              value="" />
+            <span class="input-group-addon" style="cursor: pointer" data-clipboard-target="#ClientID"
+              id="CopyClientID">Copy
               to clipboard</span>
           </div>
           And this App Name:
           <div class="input-group">
-            <input type="text" readonly="true" aria-describedby="CopyAppName" id="AppName" class="form-control" value="BIM360 Asset Sample" />
-            <span class="input-group-addon" style="cursor: pointer" data-clipboard-target="#AppName" id="CopyAppName">Copy
+            <input type="text" readonly="true" aria-describedby="CopyAppName" id="AppName" class="form-control"
+              value="BIM360 Asset Sample" />
+            <span class="input-group-addon" style="cursor: pointer" data-clipboard-target="#AppName"
+              id="CopyAppName">Copy
               to clipboard</span>
           </div>
         </div>
@@ -142,13 +152,15 @@
             <li>From the toolbar, select
               <strong>SETTINGS &gt; Apps &amp; Integrations</strong>.
               <br />
-              <img src="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/provisioning/Step1.png"
+              <img
+                src="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/provisioning/Step1.png"
                 width="500" />
             </li>
             <li>Click the
               <strong>Add Integration</strong> button.
               <br />
-              <img src="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/provisioning/Step2.png" />
+              <img
+                src="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/provisioning/Step2.png" />
             </li>
             <li>Select
               <strong>BIM 360 Account Administration</strong> and
@@ -157,16 +169,19 @@
             </li>
             <li>Select
               <strong>I’m the developer</strong>, and click
-              <strong>Next</strong>.</li>
+              <strong>Next</strong>.
+            </li>
             <li>In the
               <strong>Forge Client ID</strong> and
               <strong>App Name</strong> fields, enter the Forge client ID and app name provided by the app retailer.
             </li>
             <li>Select the
-              <strong>I have saved the Account ID information securely</strong> checkbox.</li>
+              <strong>I have saved the Account ID information securely</strong> checkbox.
+            </li>
             <li>Click
               <strong>Save</strong>.<br />
-              <img src="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/provisioning/Step3.png"
+              <img
+                src="https://github.com/Autodesk-Forge/learn.forge.viewhubmodels/raw/master/img/provisioning/Step3.png"
                 width="500" />
             </li>
             <p></p>
@@ -179,6 +194,60 @@
       </div>
     </div>
   </div>
+  <!-- Modal Initialize Iot Project  -->
+  <div class="modal fade" id="initializeIotProjectModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+          <h4 class="modal-title" id="myModalLabel">Initialize Iot Project</h4>
+        </div>
+        <div class="modal-body">
+          <div class="text-center" id="initializeIotProjectButton">
+            <button type="button" class="btn  btn-primary">Start</button>
+          </div>
+          <div class="hidden" id="initializeIotProjectProgressBar">
+            <p class="text-center text-info">0/2 Initializing ...</p>
+            <div class="progress">
+              <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="0" aria-valuemin="0"
+                aria-valuemax="100"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Initialize Iot Project  -->
+  <div class="modal fade" id="mockIotSensorRecordsModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+          <h4 class="modal-title" id="myModalLabel">Mock Iot Sensor Records</h4>
+        </div>
+        <div class="modal-body">
+          <div class="text-center" id="mockIotSensorRecordsButton">
+            <button type="button" class="btn  btn-primary">Start</button>
+          </div>
+          <div class="hidden" id="mockIotSensorRecordsProgressBar">
+            <p class="text-center text-info">Mocking sensor records from weather data ...</p>
+            <div class="progress">
+              <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="0" aria-valuemin="0"
+                aria-valuemax="100"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     new Clipboard('.input-group-addon');
   </script>
