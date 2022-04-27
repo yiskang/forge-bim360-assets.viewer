@@ -17,10 +17,8 @@
 /////////////////////////////////////////////////////////////////////
 
 using System;
-using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
-using bim360assets.Libs;
 using System.Linq;
 
 namespace bim360assets.Models
@@ -28,39 +26,27 @@ namespace bim360assets.Models
     /// <summary>
     /// Location
     /// </summary>
-    public class Location: Space
+    public class Space
     {
-        public Location()
-        {
-            this.Path = new List<string>();
-        }
-
         /// <summary>
-        /// Description
+        /// Node id
         /// </summary>
-        public string Description { get; set; }
-        public string Barcode { get; set; }
+        [Key]
+        public string Id { get; set; } = Guid.NewGuid().ToString();
         /// <summary>
-        /// Node document count
+        /// Parent node Id. null if this is the root node
         /// </summary>
-        public string DocumentCount { get; set; }
+        public string ParentId { get; set; }
+        public string Type { get; set; }
         /// <summary>
-        /// Flag that indicates if an area has been defined
+        /// Node name
         /// </summary>
-        public bool AreaDefined { get; set; }
+        [MaxLength(255)]
+        public string Name { get; set; }
+        public int Order { get; set; }
         /// <summary>
-        /// Path information from the root node to the current node. This information is only included if you use the filter[id] parameter
+        /// The list of child location
         /// </summary>
-        public List<string> Path { get; set; }
-
-        public static List<Location> BuildTree(List<Location> list, string parentId)
-        {
-            return list.Where(x => x.ParentId == parentId).Select(x =>
-            {
-                Location loc = x.MemberwiseClone() as Location;
-                loc.Children = Location.BuildTree(list, x.Id).ToList<Space>();
-                return loc;
-            }).ToList();
-        }
+        public List<Space> Children { get; set; }
     }
 }

@@ -17,8 +17,10 @@
 /////////////////////////////////////////////////////////////////////
 
 var viewer = null;
+var stTime = null;
 
 function launchViewer(urn, viewableId) {
+  stTime = new Date().getTime();
   if (viewer != null) {
     viewer.tearDown()
     viewer.finish()
@@ -26,17 +28,18 @@ function launchViewer(urn, viewableId) {
     $("#forgeViewer").empty();
   }
   var options = {
-    env: 'AutodeskProduction',
-    api: 'derivativeV2' + (atob(urn.replace('_', '/')).indexOf('emea') > -1 ? '_EU' : ''),
-    //env: 'MD20Prod' + (atob(urn.replace('urn:', '').replace('_', '/')).indexOf('emea') > -1 ? 'EU' : 'US'),
-    //api: 'D3S',
+    // env: 'AutodeskProduction',
+    // api: 'derivativeV2' + (atob(urn.replace('_', '/')).indexOf('emea') > -1 ? '_EU' : ''),
+    env: 'AutodeskProduction2',
+    api: 'streamingV2' + (atob(urn.replace('urn:', '').replace('_', '/')).indexOf('emea') > -1 ? '_EU' : ''),
     getAccessToken: getForgeToken
   };
 
   Autodesk.Viewing.Initializer(options, () => {
     const config3d = {
       extensions: ['BIM360IotConnectedExtension', 'BIM360AssetExtension'],
-      //enableLocationsAPI: true !<<< Uncomment to use BIM360 Locations API
+       useRemoteLocations: true,
+      // enableLocationsAPI: true //!<<< Uncomment to use BIM360 Locations API
     };
     viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('forgeViewer'), config3d);
     viewer.start();
@@ -45,10 +48,11 @@ function launchViewer(urn, viewableId) {
   });
   async function onDocumentLoadSuccess(doc) {
     await doc.downloadAecModelData();
-    var viewables = (viewableId ? doc.getRoot().findByGuid(viewableId) : doc.getRoot().getDefaultGeometry());
-    viewer.loadDocumentNode(doc, viewables).then(i => {
 
-    });
+    const useSvf2 = (Autodesk.Viewing.endpoint.isOtgBackend() == true) || (Autodesk.Viewing.endpoint.isSVF2Backend() == true);
+    let viewables = (viewableId ? doc.getRoot().findByGuid(viewableId) : doc.getRoot().getDefaultGeometry());
+
+    viewer.loadDocumentNode(doc, viewables, { skipHiddenFragments: !useSvf2 });
   }
 
   function onDocumentLoadFailure(viewerErrorCode) {

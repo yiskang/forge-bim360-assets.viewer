@@ -17,10 +17,8 @@
 /////////////////////////////////////////////////////////////////////
 
 using System;
-using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
-using bim360assets.Libs;
 using System.Linq;
 
 namespace bim360assets.Models
@@ -28,39 +26,16 @@ namespace bim360assets.Models
     /// <summary>
     /// Location
     /// </summary>
-    public class Location: Space
+    public class AecRoom : Space
     {
-        public Location()
-        {
-            this.Path = new List<string>();
-        }
+        /// <summary>
+        /// Object id in svf format
+        /// </summary>
+        public int SvfId { get; set; }
 
         /// <summary>
-        /// Description
+        /// Object id in svf2 format
         /// </summary>
-        public string Description { get; set; }
-        public string Barcode { get; set; }
-        /// <summary>
-        /// Node document count
-        /// </summary>
-        public string DocumentCount { get; set; }
-        /// <summary>
-        /// Flag that indicates if an area has been defined
-        /// </summary>
-        public bool AreaDefined { get; set; }
-        /// <summary>
-        /// Path information from the root node to the current node. This information is only included if you use the filter[id] parameter
-        /// </summary>
-        public List<string> Path { get; set; }
-
-        public static List<Location> BuildTree(List<Location> list, string parentId)
-        {
-            return list.Where(x => x.ParentId == parentId).Select(x =>
-            {
-                Location loc = x.MemberwiseClone() as Location;
-                loc.Children = Location.BuildTree(list, x.Id).ToList<Space>();
-                return loc;
-            }).ToList();
-        }
+        public int Svf2Id { get; set; }
     }
 }

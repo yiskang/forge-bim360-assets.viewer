@@ -31,6 +31,7 @@ using Newtonsoft.Json.Linq;
 using Autodesk.Forge;
 using Autodesk.Forge.Model;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace bim360assets.Libs
 {
@@ -149,6 +150,19 @@ namespace bim360assets.Libs
             return result;
         }
 
+        public static async Task<dynamic> GetPropertyIndexesManifestAsync(string accessToken, string projectId, string indexId)
+        {
+            RestClient client = new RestClient(BASE_URL);
+            RestRequest request = new RestRequest("/construction/index/v2/projects/{project_id}/indexes/{index_id}/manifest", RestSharp.Method.GET);
+            request.AddParameter("project_id", projectId.Replace("b.", string.Empty), ParameterType.UrlSegment);
+            request.AddParameter("index_id", indexId, ParameterType.UrlSegment);
+            request.AddHeader("Authorization", "Bearer " + accessToken);
+
+            IRestResponse response = await client.ExecuteAsync(request);
+            var result = JsonConvert.DeserializeObject<dynamic>(response.Content);
+            return result;
+        }
+
         public static async Task<dynamic> BuildPropertyQueryAsync(string accessToken, string projectId, string indexId, JObject data)
         {
             RestClient client = new RestClient(BASE_URL);
@@ -156,7 +170,10 @@ namespace bim360assets.Libs
             request.AddParameter("project_id", projectId.Replace("b.", string.Empty), ParameterType.UrlSegment);
             request.AddParameter("index_id", indexId, ParameterType.UrlSegment);
             request.AddHeader("Authorization", "Bearer " + accessToken);
-            request.AddJsonBody(data);
+            //request.AddJsonBody(data);
+
+            var body = JsonConvert.SerializeObject(data);
+            request.AddParameter("application/json", body, ParameterType.RequestBody);
 
             IRestResponse response = await client.ExecuteAsync(request);
             var result = JsonConvert.DeserializeObject<dynamic>(response.Content);
@@ -375,62 +392,135 @@ namespace bim360assets.Libs
                     )
                 )
             );
-            // {
-            //     "query": {
-            //         "$and": [
-            //             {
-            //                 "$eq": [
-            //                     "s.props.p5eddc473",
-            //                     "'Revit Rooms'"
-            //                 ]
-            //             },
-            //             {
-            //                "$eq": [
-            //                    "s.props.p6ab86626",
-            //                    "'Level 2'"
-            //                ]
-            //             },
-            //             {
-            //                 "$gt": [
-            //                     {
-            //                         "$count": "s.views"
-            //                     },
-            //                     0
-            //                 ]
-            //             }
-            //         ]
-            //     }
-            // }
+
             return await BuildPropertyQueryAsync(accessToken, projectId, indexId, data);
         }
 
-        public static async Task<dynamic> BuildLocationDataAsync(string accessToken, string projectId, List<string> versionIds)
+        public static async Task<dynamic> BuildSpaceDataAsync(string accessToken, string projectId, List<string> versionIds, bool buildTree = false)
         {
-            var indexingRes = await BuildPropertyIndexesAsync(accessToken, projectId, versionIds);
-            var indexId = result.indexes[0].indexId;
-            var state = result.indexes[0].state;
+            dynamic indexingRes = await BuildPropertyIndexesAsync(accessToken, projectId, versionIds);
+            string indexId = indexingRes.indexes[0].indexId;
+            string state = indexingRes.indexes[0].state;
             while (state != "FINISHED")
             {
                 //keep polling
-                result = await GetPropertyIndexesStatusAsync(accessToken, projectId, indexId);
+                dynamic result = await GetPropertyIndexesStatusAsync(accessToken, projectId, indexId);
                 state = result.state;
             }
 
-            var queryRes = await QueryRoomsPropertiesAsync(accessToken, projectId, indexId);
-            var queryId = result.queryId;
-            state = result.state;
+            dynamic queryRes = await QueryRoomsPropertiesAsync(accessToken, projectId, indexId);
+            string queryId = queryRes.queryId;
+            state = queryRes.state;
 
             while (state != "FINISHED")
             {
                 //keep polling
-                result = await GetPropertyQueryStatusAsync(accessToken, projectId, indexId, queryId);
+                dynamic result = await GetPropertyQueryStatusAsync(accessToken, projectId, indexId, queryId);
                 state = result.state;
             }
 
-            var queryResultRes = await GetPropertyQueryResultsAsync(accessToken, projectId, indexId, queryRes.queryId);
-            var fieldRes = await GetPropertyFieldsAsync(accessToken, projectId, indexId);
+            List<JObject> queryResultRes = await GetPropertyQueryResultsAsync(accessToken, projectId, indexId, queryId);
+            dynamic manifestRes = await GetPropertyIndexesManifestAsync(accessToken, projectId, indexId);
+            //dynamic fieldRes = await GetPropertyFieldsAsync(accessToken, projectId, indexId);
 
-            return true;
+            var views = manifestRes.seedFiles[0].views as JArray;
+            // Assume that rooms extracted in one phase/master view only.
+            dynamic view = views.Where(view => ((string)((dynamic)view).id) == (string)((dynamic)queryResultRes[0]).views[0]).FirstOrDefault();
+
+            int levelIndex = 0;
+            var spaces = new List<Space>();
+            var svfIds = new List<int>();
+            var svf2Ids = new List<int>();
+
+            var groupResult = queryResultRes.GroupBy(item =>
+            {
+                dynamic room = item as dynamic;
+                return room.level;
+            });
+
+            if (buildTree)
+            {
+                foreach (var group in groupResult)
+                {
+                    var level = new Space
+                    {
+                        Name = group.Key,
+                        Type = "Levels",
+                        Order = ++levelIndex
+                    };
+
+                    int roomIndex = 0;
+                    level.Children = group.Select(item =>
+                    {
+                        dynamic room = item as dynamic;
+                        int svf2Id = room.svf2Id;
+                        int svfId = room.svfId;
+
+                        svfIds.Add(svfId);
+                        svf2Ids.Add(svf2Id);
+
+                        return new AecRoom
+                        {
+                            Id = room.externalId,
+                            Name = Regex.Replace(room.name.ToString(), @"\[[^]]*\]", string.Empty).Trim(),
+                            // category = room.category,
+                            // revitCategory = room.revitCategory
+                            Type = room.revitCategory,
+                            ParentId = level.Id,
+                            Order = ++roomIndex,
+                            Svf2Id = svf2Id,
+                            SvfId = svfId,
+                        };
+                    }).ToList<Space>();
+
+                    spaces.Add(level);
+                }
+            } else {
+                foreach (var group in groupResult) {
+                    var level = new Space
+                    {
+                        Name = group.Key,
+                        Type = "Levels",
+                        Order = ++levelIndex
+                    };
+
+                    int roomIndex = 0;
+
+                    var rooms = group.Select(item =>
+                    {
+                        dynamic room = item as dynamic;
+                        int svf2Id = room.svf2Id;
+                        int svfId = room.svfId;
+
+                        svfIds.Add(svfId);
+                        svf2Ids.Add(svf2Id);
+
+                        return new AecRoom
+                        {
+                            Id = room.externalId,
+                            Name = Regex.Replace(room.name.ToString(), @"\[[^]]*\]", string.Empty).Trim(),
+                            // category = room.category,
+                            // revitCategory = room.revitCategory
+                            Type = room.revitCategory,
+                            ParentId = level.Id,
+                            Order = ++roomIndex,
+                            Svf2Id = svf2Id,
+                            SvfId = svfId,
+                        };
+                    });
+
+                    spaces.Add(level);
+                    spaces.AddRange(rooms);
+                }
+            }
+
+            dynamic data = new System.Dynamic.ExpandoObject();
+            data.view = view;
+            data.spaces = spaces;
+            data.svfIds = svfIds;
+            data.svf2Ids = svf2Ids;
+
+            return data;
         }
     }
 }

@@ -1134,6 +1134,9 @@
                 this.updateHeatmap(true, true);
             }
 
+            let endTime = new Date().getTime();
+            console.log('%cTime when IotConnected ext is ready:  ' + (endTime - window.stTime) / 1000 + '(s)', 'color: green');
+
             return true;
         }
 

@@ -79,8 +79,12 @@
             while (this.customAttrDefs.length > 0) {
                 this.customAttrDefs.pop();
             }
-            while (this.locations.length > 0) {
-                this.locations.pop();
+            if (Array.isArray(this.locations)) {
+                while (this.locations.length > 0) {
+                    this.locations.pop();
+                }
+            } else {
+                delete this.locations;
             }
             while (this.locationBreadcrumbs.length > 0) {
                 this.locationBreadcrumbs.pop();
@@ -450,8 +454,15 @@
         async getLocations() {
             return new Promise(async (resolve, reject) => {
                 try {
+                    const selected = getSelectedNode();
                     const data = await this.getHqProject();
-                    const locations = await this.getRemoteLocations(`b.${data.hubId}`, `b.${data.projectId}`);
+
+                    let locations = null;
+                    if (this.viewer.config.enableLocationsAPI) {
+                        locations = await this.getRemoteLocations(`b.${data.hubId}`, `b.${data.projectId}`);
+                    } else {
+                        locations = await this.getRemoteSpaces(`b.${data.projectId}`, selected.derivative);
+                    }
                     resolve(locations);
                 } catch (ex) {
                     reject(new Error(ex));
@@ -463,7 +474,7 @@
             return new Promise(async (resolve, reject) => {
                 try {
                     //const locations = await this.getLocations();
-                    const locations = this.locations;
+                    const locations = (this.locations.spaces) ? this.locations.spaces : this.locations;
 
                     const result = [];
                     for (let i = 0; i < locations.length; i++) {
@@ -496,7 +507,31 @@
                             return response.json();
                         } else {
                             return reject(
-                                new Error(`Failed to fetch BIM360 Locations from server (status: ${response.status}, message: ${response.statusText})`)
+                                new Error(`Failed to fetch Location data from server (status: ${response.status}, message: ${response.statusText})`)
+                            );
+                        }
+                    })
+                    .then((data) => {
+                        if (!data) return reject(new Error('Empty response'));
+
+                        resolve(data);
+                    })
+                    .catch((error) => reject(error));
+            });
+        }
+
+        async getRemoteSpaces(projectId, urn) {
+            return new Promise((resolve, reject) => {
+                fetch(`/api/forge/bim360/project/${projectId}/spaces/${urn}?buildTree=true`, {
+                    method: 'get',
+                    headers: new Headers({ 'Content-Type': 'application/json' })
+                })
+                    .then((response) => {
+                        if (response.status === 200) {
+                            return response.json();
+                        } else {
+                            return reject(
+                                new Error(`Failed to fetch Space data from server (status: ${response.status}, message: ${response.statusText})`)
                             );
                         }
                     })
@@ -1612,7 +1647,8 @@
             this.treeContainer = treeDiv;
             this.scrollContainer.appendChild(div);
 
-            const locs = this.dataProvider.locations;
+            const { locations } = this.dataProvider;
+            const locs = (locations.spaces) ? locations.spaces : locations;
             this.buildTree(locs);
         }
 
@@ -1655,7 +1691,8 @@
         }
 
         findLevelLocationByName(name) {
-            const levelData = this.dataProvider.locations;
+            const { locations } = this.dataProvider;
+            const levelData = (locations.spaces) ? locations.spaces : locations;
             return levelData.find(level => level.name.includes(name));
         }
 
@@ -1719,29 +1756,40 @@
         };
 
         async loadRoomModels() {
-            const getRoomDbIds = () => {
-                return new Promise((resolve, reject) => {
-                    this.viewer.search(
-                        'Revit Rooms',
-                        (dbIds) => resolve(dbIds),
-                        (error) => reject(error),
-                        ['Category'],
-                        { searchHidden: true }
-                    );
-                });
-            };
-
             try {
-                const roomDbIds = await getRoomDbIds();
+                let roomDbIds = null;
+                let masterViewBubble = null;
+                let possibleViewableIds = null;
+
+                const isSvf2 = (this.viewer.model.isOTG() == true) || (this.viewer.model.isSVF2() == true);
+
+                if (Array.isArray(this.dataProvider.locations?.spaces)) {
+                    possibleViewableIds = [].concat(this.dataProvider.locations.view.viewableId);
+                    roomDbIds = isSvf2 ? this.dataProvider.locations?.svf2Ids : this.dataProvider.locations?.svfIds;
+                } else {
+                    const getRoomDbIds = () => {
+                        return new Promise((resolve, reject) => {
+                            this.viewer.search(
+                                'Revit Rooms',
+                                (dbIds) => resolve(dbIds),
+                                (error) => reject(error),
+                                ['Category'],
+                                { searchHidden: true }
+                            );
+                        });
+                    };
+
+                    roomDbIds = await getRoomDbIds();
+
+                    const firstRoomProps = await this.getPropertiesAsync(roomDbIds[0], this.viewer.model);
+                    possibleViewableIds = firstRoomProps.properties.filter(prop => prop.attributeName === 'viewable_in').map(prop => prop.displayValue);
+                }
+
                 if (!roomDbIds || roomDbIds.length <= 0) {
                     throw new Error('No Rooms found in current model');
                 }
 
-                const firstRoomProps = await this.getPropertiesAsync(roomDbIds[0], this.viewer.model);
                 const doc = this.viewer.model.getDocumentNode().getDocument();
-
-                const possibleViewableIds = firstRoomProps.properties.filter(prop => prop.attributeName === 'viewable_in').map(prop => prop.displayValue);
-                let masterViewBubble = null;
                 for (let i = 0; i < possibleViewableIds.length; i++) {
                     const bubbles = doc.getRoot().search({ 'viewableID': possibleViewableIds[i] });
 
@@ -1767,8 +1815,9 @@
                         ids: roomDbIds,
                         modelNameOverride: 'Room Only Model',
                         keepCurrentModels: true,
-                        //skipHiddenFragments: false,
-                        globalOffset: this.viewer.model.getGlobalOffset()
+                        skipHiddenFragments: !isSvf2,
+                        globalOffset: new THREE.Vector3(),//this.viewer.model.getGlobalOffset(),
+                        placementTransform: this.viewer.model.getModelToViewerTransform()
                     }
                 );
             } catch (ex) {
@@ -1779,27 +1828,43 @@
 
         async findRoomByNameAndLevel(name, level) {
             return new Promise((resolve, reject) => {
-                this.roomModel.getBulkProperties2(
-                    this.roomDbIds,
-                    { propFilter: ['name', 'Name', 'Level', 'level', 'viewable_in'] },
-                    (result) => {
-                        let dbId = null;
-                        for (let i = 0; i < result.length; i++) {
-                            const data = result[i];
-                            const levelMatched = (data.properties.findIndex(p => p.attributeName.toLowerCase() === 'level' && p.displayValue === level) >= 0);
-                            const nameMatched = (data.properties.findIndex(p => p.attributeName.toLowerCase() === 'name' && p.displayValue === name) >= 0);
-                            const hasViewable = (data.properties.findIndex(p => p.attributeName.toLowerCase() === 'viewable_in' && p.displayValue != null) >= 0);
+                if (Array.isArray(this.dataProvider.locations.spaces)) {
+                    let dbId = null;
+                    let levelInLocs = this.dataProvider.locations.spaces.find(lvl => lvl.name == level);
+                    if (!levelInLocs) return resolve(dbId);
 
-                            if (levelMatched && nameMatched && hasViewable) {
-                                dbId = data.dbId;
-                                break;
+                    let room = levelInLocs.children.find(sp => sp.name == name);
+                    if (!room) return resolve(dbId);
+
+                    const isSvf2 = (this.roomModel.isOTG() == true) || (this.roomModel.isSVF2() == true);
+                    dbId = isSvf2 ? room.svf2Id : room.svfId;
+                    return resolve(dbId);
+                } else {
+                    this.roomModel.getBulkProperties2(
+                        this.roomDbIds,
+                        { propFilter: ['name', 'Name', 'Level', 'level', 'viewable_in'] },
+                        (result) => {
+                            let dbId = null;
+                            for (let i = 0; i < result.length; i++) {
+                                const data = result[i];
+                                const levelMatched = (data.properties.findIndex(p => p.attributeName.toLowerCase() === 'level' && p.displayValue === level) >= 0);
+                                let nameMatched = (data.properties.findIndex(p => p.attributeName.toLowerCase() === 'name' && p.displayValue === name) >= 0);
+                                if (!nameMatched)
+                                    nameMatched = data.name == name;
+
+                                const hasViewable = (data.properties.findIndex(p => p.attributeName.toLowerCase() === 'viewable_in' && p.displayValue != null) >= 0);
+
+                                if (levelMatched && nameMatched && hasViewable) {
+                                    dbId = data.dbId;
+                                    break;
+                                }
                             }
-                        }
 
-                        resolve(dbId);
-                    },
-                    (error) => reject(error),
-                );
+                            resolve(dbId);
+                        },
+                        (error) => reject(error),
+                    );
+                }
             });
         }
 
@@ -1837,6 +1902,8 @@
                     return node;
                 } else if (node != null) {
                     let result = null;
+                    if (!node.children) return result;
+
                     for (let i = 0; result == null && i < node.children.length; i++) {
                         result = searchTree(node.children[i], pred);
                     }
@@ -1845,7 +1912,9 @@
                 return null;
             }
 
-            const levelData = this.dataProvider.locations.find(lvl => lvl.name.includes(level));
+            const { locations } = this.dataProvider;
+            const locs = (locations.spaces) ? locations.spaces : locations;
+            const levelData = locs.find(lvl => lvl.name.includes(level));
             let result = null;
 
             if (levelData) {
@@ -2172,12 +2241,15 @@
 
             this.spaceFilterPanel = spaceFilterPanel;
             try {
-                // Pre-load room model
-                await spaceFilterPanel.loadRoomModels();
-
-                if (this.options.enableLocationsAPI === true) {
+                if (this.options.useRemoteLocations === true) {
                     await this.dataProvider.buildLocationsFromApi();
+
+                    // Pre-load room model
+                    await spaceFilterPanel.loadRoomModels();
                 } else {
+                    // Pre-load room model
+                    await spaceFilterPanel.loadRoomModels();
+
                     await this.dataProvider.buildLocationsFromRoomProps({
                         dbIds: spaceFilterPanel.roomDbIds,
                         model: spaceFilterPanel.roomModel
@@ -2253,11 +2325,14 @@
 
             if (this.viewer.toolbar) {
                 // Toolbar is already available, create the UI
-                this.createUI();
+                await this.createUI();
             }
 
             // Pre-fetch necessary data for assets
             await this.dataProvider.fetchData();
+
+            let endTime = new Date().getTime();
+            console.log('%cTime when Asset ext is ready:  ' + (endTime - window.stTime) / 1000 + '(s)', 'color: green');
 
             return true;
         }
@@ -2336,7 +2411,7 @@
                 var parent = node.parents[i];
                 if (parent.indexOf('hubs') > 0 && parent.indexOf('projects') > 0) {
                     var version = atob(node.id.replace('_', '/')).split('=')[1]
-                    return { 'project': parent, 'urn': (node.type == 'versions' ? id(node.parents[0]) : ''), version: version };
+                    return { 'project': parent, 'urn': (node.type == 'versions' ? id(node.parents[0]) : ''), version: version, derivative: node.id };
                 }
             }
         }
