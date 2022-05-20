@@ -597,6 +597,25 @@ namespace bim360assets.Controllers
             return await client.ExecuteTaskAsync(request);
         }
 
+
+        [HttpGet]
+        [Route("api/forge/bim360/project/{projectId}/asset-props/{urn}")]
+        public async Task<IActionResult> GetBIM360AssetStatusesAsync(string projectId, string urn)
+        {
+            Credentials credentials = await Credentials.FromSessionAsync(base.Request.Cookies, Response.Cookies);
+            if (credentials == null)
+            {
+                throw new InvalidOperationException("Failed to refresh access token");
+            }
+
+            byte[] data = Convert.FromBase64String(urn.Replace('_', '/'));
+            string versionId = Encoding.UTF8.GetString(data);
+
+            var props = await BIM360DataUtil.GetAssetPropsFromModelPropsAsync(credentials.TokenInternal, projectId, versionId);
+
+            return Ok(props);
+        }
+
         [HttpGet]
         [Route("api/forge/bim360/account/{accountId}/project/{projectId}/locations")]
         public async Task<IActionResult> GetBIM360LocationsAsync(string accountId, string projectId, [FromQuery] bool buildTree = false)
@@ -661,7 +680,7 @@ namespace bim360assets.Controllers
 
         [HttpGet]
         [Route("api/forge/bim360/project/{projectId}/spaces/{urn}")]
-        public async Task<IActionResult> GetSpaces(string accountId, string projectId, string urn, [FromQuery] bool buildTree = false)
+        public async Task<IActionResult> GetSpaces(string projectId, string urn, [FromQuery] bool buildTree = false)
         {
             Credentials credentials = await Credentials.FromSessionAsync(base.Request.Cookies, Response.Cookies);
             if (credentials == null)
@@ -677,6 +696,32 @@ namespace bim360assets.Controllers
             }, buildTree);
 
             return Ok(res);
+        }
+
+        [HttpPost]
+        [Route("api/forge/bim360/project/{projectId}/locations")]
+        public async Task<IActionResult> ImportLocations([FromRoute] string projectId, [FromBody] JObject payload)
+        {
+            Credentials credentials = await Credentials.FromSessionAsync(base.Request.Cookies, Response.Cookies);
+            if (credentials == null)
+            {
+                throw new InvalidOperationException("Failed to refresh access token");
+            }
+
+            string urn = ((dynamic)payload).urn;
+            if (string.IsNullOrWhiteSpace(urn))
+                return BadRequest(new
+                {
+                    title = "Invalid Data",
+                    detail = "Missing field `urn` in the request body"
+                });
+
+            byte[] data = Convert.FromBase64String(urn.Replace('_', '/'));
+            string versionId = Encoding.UTF8.GetString(data);
+
+            var locations = await BIM360DataUtil.ImportLocationsFromModelPropsAsync(credentials.TokenInternal, projectId, versionId);
+
+            return Ok(locations);
         }
     }
 }

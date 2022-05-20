@@ -32,6 +32,7 @@ using Autodesk.Forge;
 using Autodesk.Forge.Model;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Net;
 
 namespace bim360assets.Libs
 {
@@ -113,6 +114,98 @@ namespace bim360assets.Libs
             var encodedNextCursorStateStr = Convert.ToBase64String(Encoding.UTF8.GetBytes(nextCursorStateStr));
 
             return await GetAssetsByCustomAttributeAsync(accessToken, projectId, name, value, encodedNextCursorStateStr, assets.Pagination.Limit);
+        }
+
+        private async static Task<dynamic> GetVersionRefDerivativeUrnAsync(string projectId, string versionId, string credentials)
+        {
+            var versionApi = new VersionsApi();
+            versionApi.Configuration.AccessToken = credentials;
+
+            var relationshipRefs = await versionApi.GetVersionRelationshipsRefsAsync(projectId, versionId);
+            if (relationshipRefs == null && relationshipRefs.included == null) return null;
+
+            var includedData = new DynamicDictionaryItems(relationshipRefs.included);
+
+            if (includedData.Count() > 0)
+            {
+                var refData = includedData.Cast<KeyValuePair<string, dynamic>>()
+                    .FirstOrDefault(d => d.Value != null &&
+                        d.Value.type == "versions" &&
+                        d.Value.attributes.extension.type == "versions:autodesk.bim360:File");
+
+                if (!refData.Equals(default(KeyValuePair<string, dynamic>)))
+                {
+                    return refData.Value.relationships.derivatives.data.id;
+                }
+
+                return null;
+            }
+
+            return null;
+        }
+
+        public async static Task<dynamic> GetVersionDerivativeUrnAsync(string projectId, string versionId, string credentials)
+        {
+            var versionsApi = new VersionsApi();
+            versionsApi.Configuration.AccessToken = credentials;
+
+            var version = await versionsApi.GetVersionAsync(projectId, versionId);
+
+            string versionDerivativeId = null;
+
+            var attributesData = new DynamicDictionaryItems(version.data.attributes.extension.data);
+            var checkViewableGuid = attributesData.Cast<KeyValuePair<string, dynamic>>().Select(d => d.Key).Any(d => d == "viewableGuid");
+
+            if (version.data.attributes.extension.data != null && checkViewableGuid && !string.IsNullOrWhiteSpace(version.data.attributes.extension.data.viewableGuid))
+            {
+                versionDerivativeId = await GetVersionRefDerivativeUrnAsync(projectId, versionId, credentials);
+            }
+            else
+            {
+                versionDerivativeId = (version.data.relationships != null && version.data.relationships.derivatives != null ? version.data.relationships.derivatives.data.id : null);
+            }
+
+            return versionDerivativeId;
+        }
+
+        public static async Task<PaginatedLocations> GetLocationsAsync(string credentials, string projectId)
+        {
+            RestClient client = new RestClient(BASE_URL);
+            RestRequest request = new RestRequest("/construction/locations/v2/projects/{project_id}/trees/{tree_id}/nodes", RestSharp.Method.GET);
+            request.AddParameter("project_id", projectId, ParameterType.UrlSegment);
+            request.AddParameter("tree_id", "default", ParameterType.UrlSegment);
+            request.AddHeader("Authorization", "Bearer " + credentials);
+
+            IRestResponse locsResponse = await client.ExecuteAsync(request);
+            var result = JsonConvert.DeserializeObject<PaginatedLocations>(locsResponse.Content);
+            return result;
+        }
+
+        public static async Task<Location> GetLocationsRootAsync(string credentials, string projectId)
+        {
+            var locations = await GetLocationsAsync(credentials, projectId);
+            return locations.Results.FirstOrDefault();
+        }
+
+        public static async Task<Location> CreateLocationsNodeAsync(string credentials, string projectId, Location data)
+        {
+            RestClient client = new RestClient(BASE_URL);
+            RestRequest request = new RestRequest("/construction/locations/v2/projects/{project_id}/trees/{tree_id}/nodes", RestSharp.Method.POST);
+            request.AddParameter("project_id", projectId, ParameterType.UrlSegment);
+            request.AddParameter("tree_id", "default", ParameterType.UrlSegment);
+            request.AddHeader("Authorization", "Bearer " + credentials);
+
+            var body = JsonConvert.SerializeObject(data);
+            request.AddParameter("application/json", body, ParameterType.RequestBody);
+
+            IRestResponse response = await client.ExecuteAsync(request);
+            if (response.StatusCode == HttpStatusCode.Created)
+            {
+                var result = JsonConvert.DeserializeObject<Location>(response.Content);
+                return result;
+            }
+
+            return null;
         }
 
         public static async Task<dynamic> BuildPropertyIndexesAsync(string accessToken, string projectId, List<string> versionIds)
@@ -323,6 +416,13 @@ namespace bim360assets.Libs
 
         public static async Task<dynamic> QueryRoomsPropertiesAsync(string accessToken, string projectId, string indexId, string roomCategoryName = "'Revit Rooms'")
         {
+            List<JObject> propFields = await GetPropertyFieldsAsync(accessToken, projectId, indexId);
+            dynamic levelField = propFields.FirstOrDefault(field => ((dynamic)field).name.ToString() == "Level" && ((dynamic)field).category.ToString() == "Constraints");
+
+            string levelFieldKeyValue = levelField.key;
+            string levelFieldKeyName = levelField.name;
+            string levelFieldKey = $"s.props.{levelFieldKeyValue}";
+
             var data = new JObject(
                 new JProperty("query",
                     new JObject(
@@ -337,15 +437,6 @@ namespace bim360assets.Libs
                                         }
                                     )
                                 ),
-                                // new JObject(
-                                //     new JProperty("$eq",
-                                //         new JArray
-                                //         {
-                                //             new JValue("s.props.p6ab86626"),
-                                //             new JValue("'Level 2'")
-                                //         }
-                                //     )
-                                // ),
                                 new JObject(
                                     new JProperty("$gt",
                                         new JArray
@@ -365,17 +456,18 @@ namespace bim360assets.Libs
                 ),
                 new JProperty("columns",
                     new JObject(
+                        new JProperty("svfId",
+                            new JValue("s.lmvId")
+                        ),
                         new JProperty("s.svf2Id",
                             new JValue(true)
                         ),
                         new JProperty("s.externalId",
                             new JValue(true)
                         ),
-                        new JProperty("svfId",
-                            new JValue("s.lmvId")
-                        ),
                         new JProperty("level",
-                            new JValue("s.props.p01bbdcf2") //!<<< Might need to be changed by models
+                            //new JValue("s.props.p01bbdcf2") //!<<< Might need to be changed by models
+                            new JValue(levelFieldKey)
                         ),
                         new JProperty("name",
                             new JValue("s.props.p153cb174")
@@ -390,6 +482,77 @@ namespace bim360assets.Libs
                             new JValue(true)
                         )
                     )
+                )
+            );
+
+            return await BuildPropertyQueryAsync(accessToken, projectId, indexId, data);
+        }
+
+        public static async Task<dynamic> QueryAssetPropertiesAsync(string accessToken, string projectId, string indexId)
+        {
+            // 'Asset ID', 'Asset Location', 'Asset Category', 'externalId', 'name'
+            var assetFieldNames = new List<string> { "Asset ID", "Asset Location", "Asset Category" };
+            List<JObject> propFields = await GetPropertyFieldsAsync(accessToken, projectId, indexId);
+            var assetFields = propFields.Where(field => assetFieldNames.Contains(((dynamic)field).name.ToString()));
+            var assetFieldKeys = assetFields.Select(field => ((dynamic)field).key.ToString()).ToList();
+
+            var queryConditions = new JArray();
+            var queryColumns = new JObject(
+                new JProperty("svfId",
+                    new JValue("s.lmvId")
+                ),
+                new JProperty("s.svf2Id",
+                    new JValue(true)
+                ),
+                new JProperty("s.externalId",
+                    new JValue(true)
+                ),
+                new JProperty("name",
+                    new JValue("s.props.p153cb174")
+                )
+            );
+
+            foreach (dynamic field in assetFields)
+            {
+                string fieldKeyValue = field.key;
+                string fieldKeyName = field.name;
+                string fieldKey = $"s.props.{fieldKeyValue}";
+
+                queryConditions.Add(new JObject(
+                    new JProperty("$notnull",
+                        new JValue(fieldKey)
+                    )
+                ));
+
+                queryColumns.Add(fieldKeyName.ToCamelCase(), new JValue(fieldKey));
+            }
+
+            queryConditions.Add(new JObject(
+                new JProperty("$gt",
+                    new JArray
+                    {
+                        new JObject(
+                            new JProperty("$count",
+                                new JValue("s.views")
+                            )
+                        ),
+                        new JValue(0)
+                    }
+                )
+            ));
+
+            // queryColumns.Add("s.views", new JValue(true));
+
+            var data = new JObject(
+                new JProperty("query",
+                    new JObject(
+                        new JProperty("$and",
+                            queryConditions
+                        )
+                    )
+                ),
+                new JProperty("columns",
+                    queryColumns
                 )
             );
 
@@ -475,8 +638,11 @@ namespace bim360assets.Libs
 
                     spaces.Add(level);
                 }
-            } else {
-                foreach (var group in groupResult) {
+            }
+            else
+            {
+                foreach (var group in groupResult)
+                {
                     var level = new Space
                     {
                         Name = group.Key,
@@ -521,6 +687,106 @@ namespace bim360assets.Libs
             data.svf2Ids = svf2Ids;
 
             return data;
+        }
+
+        public static async Task<dynamic> GetAssetPropsFromModelPropsAsync(string accessToken, string projectId, string versionId)
+        {
+            dynamic indexingRes = await BuildPropertyIndexesAsync(accessToken, projectId, new List<string>{
+                versionId
+            });
+            string indexId = indexingRes.indexes[0].indexId;
+            string state = indexingRes.indexes[0].state;
+            while (state != "FINISHED")
+            {
+                //keep polling
+                dynamic result = await GetPropertyIndexesStatusAsync(accessToken, projectId, indexId);
+                state = result.state;
+            }
+
+            dynamic queryRes = await QueryAssetPropertiesAsync(accessToken, projectId, indexId);
+            string queryId = queryRes.queryId;
+            state = queryRes.state;
+
+            while (state != "FINISHED")
+            {
+                //keep polling
+                dynamic result = await GetPropertyQueryStatusAsync(accessToken, projectId, indexId, queryId);
+                state = result.state;
+            }
+
+            List<JObject> queryResultRes = await GetPropertyQueryResultsAsync(accessToken, projectId, indexId, queryId);
+
+            return queryResultRes;
+        }
+
+        public static async Task<List<Location>> ImportLocationsFromModelPropsAsync(string accessToken, string projectId, string versionId)
+        {
+            System.Diagnostics.Trace.WriteLine("1. Getting file derivative urn from Docs service");
+            var derivativeUrn = await BIM360DataUtil.GetVersionDerivativeUrnAsync($"b.{projectId}", versionId, accessToken);
+
+            System.Diagnostics.Trace.WriteLine("2. Getting AEC model data from derivative manifest");
+            List<Level> levelsData = await BIM360DataUtil.GetLevelsFromAecModelData(accessToken, derivativeUrn);
+
+            System.Diagnostics.Trace.WriteLine("3. Getting space data from Model Properties API");
+            dynamic locationsFromModelProps = await BIM360DataUtil.BuildSpaceDataAsync(accessToken, projectId, new List<string>{
+                versionId
+            }, false);
+
+            System.Diagnostics.Trace.WriteLine("4. Getting location root from Locations API");
+            string levelGuid = "";
+            var locationRootNode = await BIM360DataUtil.GetLocationsRootAsync(accessToken, projectId);
+
+            System.Diagnostics.Trace.WriteLine("5. Iterating space data and importing them into Locations service");
+            var locations = new List<Location>();
+
+            foreach (Space space in locationsFromModelProps.spaces)
+            {
+                var name = space.Name;
+                var type = space.Type;
+                Location location = null;
+
+                if (type == "Levels")
+                {
+                    var levelInAecData = levelsData.Find(lvl => lvl.Name == space.Name);
+                    var externalId = levelInAecData == null ? space.Id : levelInAecData.Guid;
+
+                    var bytesEncodedExternalId = System.Text.Encoding.UTF8.GetBytes(externalId);
+                    var base64ExternalId = System.Convert.ToBase64String(bytesEncodedExternalId);
+
+                    location = new Location
+                    {
+                        Name = name,
+                        Type = "Level",
+                        Barcode = base64ExternalId,
+                        ParentId = locationRootNode.Id
+                    };
+                }
+                else
+                {
+                    var bytesEncodedExternalId = System.Text.Encoding.UTF8.GetBytes(space.Id);
+                    var base64ExternalId = System.Convert.ToBase64String(bytesEncodedExternalId);
+                    location = new Location
+                    {
+                        Name = name,
+                        Type = "Area",
+                        Barcode = base64ExternalId,
+                        ParentId = levelGuid
+                    };
+                }
+
+                var result = await BIM360DataUtil.CreateLocationsNodeAsync(accessToken, projectId, location);
+                if (result == null)
+                    throw new InvalidOperationException("Failed to create new node");
+
+                locations.Add(result);
+
+                if (result.Type == "Level")
+                    levelGuid = result.Id;
+            }
+
+            System.Diagnostics.Trace.WriteLine("6. Successfully imported all space data into Locations service!");
+
+            return locations;
         }
     }
 }
